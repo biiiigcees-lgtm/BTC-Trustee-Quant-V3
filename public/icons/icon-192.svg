@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="36" fill="#050a0e"/>
+  <rect x="2" y="2" width="188" height="188" rx="34" fill="none" stroke="#00ffe7" stroke-width="3" opacity="0.25"/>
+  <!-- BTC symbol -->
+  <text x="96" y="132" text-anchor="middle" font-family="Georgia, serif" font-weight="bold" font-size="104" fill="#00ffe7">₿</text>
+  <!-- Subtle glow line at bottom -->
+  <rect x="36" y="162" width="120" height="2" rx="1" fill="#00ffe7" opacity="0.35"/>
+</svg>

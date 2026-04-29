@@ -1,0 +1,25 @@
+{
+  "name": "BTC Binary Oracle",
+  "short_name": "BTC Oracle",
+  "description": "Real-time BTC price analysis with AI-powered ABOVE/BELOW predictions for Kalshi binary options.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050a0e",
+  "theme_color": "#00ffe7",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
