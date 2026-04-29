@@ -16,6 +16,12 @@ import { VerdictHero } from "@/components/verdict-hero";
 import { LiveChartPanel } from "@/components/live-chart-panel";
 import { AIOptimizerPanel } from "@/components/ai-optimizer-panel";
 import { IndicatorCard } from "@/components/indicator-card";
+import { DiaryView } from "@/components/diary-view";
+import { ForecastDisplay } from "@/components/forecast-display";
+import { TradeControls } from "@/components/trade-controls";
+import { KXBTC15MTimer } from "@/components/kxbtc15m-timer";
+import { BetsLedger } from "@/components/bets-ledger";
+import { useExchangeData } from "@/lib/use-exchange-data";
 
 // ─── Technical indicator helpers ───────────────────────────────────────────
 
@@ -1175,6 +1181,9 @@ export default function Page() {
   const [source, setSource] = useState<"loading" | "live" | "error">("loading");
   const [closes, setCloses] = useState<number[]>([]);
 
+  // Exchange data hook for real-time WebSocket
+  const exchangeData = useExchangeData("BTC/USD");
+
   // Indicators
   const [ema9, setEma9] = useState<number | null>(null);
   const [ema21, setEma21] = useState<number | null>(null);
@@ -2198,6 +2207,9 @@ export default function Page() {
               <CountdownRing seconds={expirySeconds} label="EXPIRES" />
             </div>
 
+            {/* Kalshi 15-min timer */}
+            <KXBTC15MTimer />
+
             {/* Window bias + regime */}
             {windowBias !== null && (
               <div className="glass-card px-3 py-2 flex items-center gap-3">
@@ -2219,6 +2231,12 @@ export default function Page() {
             <div className="glass-card p-3">
               <Sparkline prices={closes} height={48} />
             </div>
+
+            {/* Real-time forecast display */}
+            <ForecastDisplay />
+
+            {/* Bets ledger */}
+            <BetsLedger />
           </div>
         )}
 
@@ -2255,6 +2273,9 @@ export default function Page() {
         {/* ── TAB CONTENT: TRADE (existing prediction UI) ─────────────────── */}
         {activeTab === "trade" && (
           <div className="flex flex-col gap-3 tab-content-enter">
+            {/* Trade controls */}
+            <TradeControls currentPrice={price ?? 0} />
+
             {/* Prediction input */}
             <div className="glass-card p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -2371,6 +2392,9 @@ export default function Page() {
             />
             <AnalyticsPanel history={predHistory} />
             <CalibrationPanel history={predHistory} />
+
+            {/* Secret diary view */}
+            <DiaryView />
           </div>
         )}
 
