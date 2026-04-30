@@ -21,6 +21,8 @@ import { ForecastDisplay } from "@/components/forecast-display";
 import { TradeControls } from "@/components/trade-controls";
 import { KXBTC15MTimer } from "@/components/kxbtc15m-timer";
 import { BetsLedger } from "@/components/bets-ledger";
+import { BTCKalshiAnalysis } from "@/components/btc-kalshi-analysis";
+import { BacktestStatsPanel } from "@/components/backtest-stats-panel";
 import { useExchangeData } from "@/lib/use-exchange-data";
 
 // ─── Technical indicator helpers ───────────────────────────────────────────
@@ -2441,9 +2443,12 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── TAB CONTENT: ANALYSIS (keep existing panels) ─────────────────── */}
+        {/* ── TAB CONTENT: ANALYSIS ─────────────────────────────────────────── */}
         {activeTab === "analysis" && (
           <div className="flex flex-col gap-3 tab-content-enter">
+            {/* AI Analysis Panel */}
+            <BTCKalshiAnalysis />
+
             {/* Existing market intel panels */}
             <KalshiMarketPanel
               target={target}
@@ -2456,8 +2461,7 @@ export default function Page() {
               signals={signals}
               onClear={() => setSignals([])}
             />
-            <AnalyticsPanel history={predHistory} />
-            <CalibrationPanel history={predHistory} />
+            <BacktestStatsPanel result={null} />
 
             {/* Secret diary view */}
             <DiaryView />
