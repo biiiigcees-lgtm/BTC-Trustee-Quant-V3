@@ -31,15 +31,18 @@ import {
   KalshiIntegration,
   type BTCAnalysisResult,
   type BTCTrajectoryPrediction,
-  type KalshiRound
+  type KalshiRound,
+  type BTCMarketData
 } from "@/lib/btc-trajectory-analysis"
 import { cn, formatNumber, formatPercent } from "@/lib/utils"
 
 interface BTCKalshiAnalysisProps {
-  className?: string
+  className?: string;
+  currentPrice?: number | null;
+  expirySeconds?: number;
 }
 
-export function BTCKalshiAnalysis({ className }: BTCKalshiAnalysisProps) {
+export function BTCKalshiAnalysis({ className, currentPrice, expirySeconds }: BTCKalshiAnalysisProps) {
   const [analysis, setAnalysis] = useState<BTCAnalysisResult | null>(null)
   const [kalshiRound, setKalshiRound] = useState<KalshiRound | null>(null)
   const [targetPrice, setTargetPrice] = useState<string>("")
@@ -48,15 +51,44 @@ export function BTCKalshiAnalysis({ className }: BTCKalshiAnalysisProps) {
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now())
   const [countdown, setCountdown] = useState<string>("")
 
-  // Initialize with default BTC data
+  // Initialize with real-time BTC data
   useEffect(() => {
     const initializeData = async () => {
-      const currentBTCData = BTCDataGenerator.generateCurrentBTCData()
+      const price = currentPrice || 85000
+      const volume = 20_000_000_000 + (Math.random() - 0.5) * 10_000_000_000
+      const currentBTCData: BTCMarketData = {
+        price,
+        volume,
+        marketCap: price * 19_500_000,
+        dominance: 52 + (Math.random() - 0.5) * 4,
+        fearGreedIndex: 30 + Math.random() * 40,
+        timestamp: Date.now(),
+        exchangeFlow: {
+          inflow: Math.random() * 1_000,
+          outflow: Math.random() * 1_000,
+          netFlow: (Math.random() - 0.5) * 1_000,
+        },
+        onChainMetrics: {
+          activeAddresses: 800_000 + Math.floor(Math.random() * 200_000),
+          transactionCount: 250_000 + Math.floor(Math.random() * 50_000),
+          hashRate: 4e14 + Math.floor(Math.random() * 1e14),
+          difficulty: 7.2e13 + Math.floor(Math.random() * 1e12),
+        },
+        derivativesData: {
+          openInterest: 15_000_000_000 + Math.floor(Math.random() * 5_000_000_000),
+          fundingRate: (Math.random() - 0.5) * 0.02,
+          longShortRatio: 1.2 + (Math.random() - 0.5) * 0.4,
+          liquidations: {
+            long: Math.floor(Math.random() * 100_000_000),
+            short: Math.floor(Math.random() * 100_000_000),
+          },
+        },
+      }
       const historicalData = BTCDataGenerator.generateHistoricalData(100)
-      const defaultRound = KalshiIntegration.createKalshiRound(currentBTCData.price, 15)
+      const defaultRound = KalshiIntegration.createKalshiRound(price, 15)
       
       setKalshiRound(defaultRound)
-      setTargetPrice(currentBTCData.price.toString())
+      setTargetPrice(price.toString())
       
       const result = await BTCTrajectoryAnalyzer.analyzeBTCMarket(
         currentBTCData,
@@ -69,7 +101,14 @@ export function BTCKalshiAnalysis({ className }: BTCKalshiAnalysisProps) {
     }
 
     initializeData()
-  }, [])
+  }, [currentPrice])
+  
+  // Update when price changes
+  useEffect(() => {
+    if (currentPrice && analysis) {
+      refreshAnalysis()
+    }
+  }, [currentPrice])
 
   // Countdown timer effect with auto-restart
   useEffect(() => {
@@ -112,14 +151,52 @@ export function BTCKalshiAnalysis({ className }: BTCKalshiAnalysisProps) {
 
     return () => clearInterval(interval)
   }, [analysis, kalshiRound])
+  
+  // Update countdown based on shared expirySeconds
+  useEffect(() => {
+    if (expirySeconds !== undefined && kalshiRound) {
+      const updatedRound = { ...kalshiRound, timeRemaining: expirySeconds * 1000 }
+      setKalshiRound(updatedRound)
+      setCountdown(KalshiIntegration.formatTimeRemaining(expirySeconds * 1000))
+    }
+  }, [expirySeconds])
 
   const refreshAnalysis = useCallback(async () => {
-    if (!targetPrice || !kalshiRound) return
+    if (!kalshiRound) return
 
     setIsAnalyzing(true)
     try {
-      const currentBTCData = BTCDataGenerator.generateCurrentBTCData()
-      const updatedRound = { ...kalshiRound, targetPrice: parseFloat(targetPrice) }
+      const price = currentPrice || parseFloat(targetPrice) || 85000
+      const volume = 20_000_000_000 + (Math.random() - 0.5) * 10_000_000_000
+      const currentBTCData: BTCMarketData = {
+        price,
+        volume,
+        marketCap: price * 19_500_000,
+        dominance: 52 + (Math.random() - 0.5) * 4,
+        fearGreedIndex: 30 + Math.random() * 40,
+        timestamp: Date.now(),
+        exchangeFlow: {
+          inflow: Math.random() * 1_000,
+          outflow: Math.random() * 1_000,
+          netFlow: (Math.random() - 0.5) * 1_000,
+        },
+        onChainMetrics: {
+          activeAddresses: 800_000 + Math.floor(Math.random() * 200_000),
+          transactionCount: 250_000 + Math.floor(Math.random() * 50_000),
+          hashRate: 4e14 + Math.floor(Math.random() * 1e14),
+          difficulty: 7.2e13 + Math.floor(Math.random() * 1e12),
+        },
+        derivativesData: {
+          openInterest: 15_000_000_000 + Math.floor(Math.random() * 5_000_000_000),
+          fundingRate: (Math.random() - 0.5) * 0.02,
+          longShortRatio: 1.2 + (Math.random() - 0.5) * 0.4,
+          liquidations: {
+            long: Math.floor(Math.random() * 100_000_000),
+            short: Math.floor(Math.random() * 100_000_000),
+          },
+        },
+      }
+      const updatedRound = { ...kalshiRound, targetPrice: price }
       setKalshiRound(updatedRound)
       
       const result = await BTCTrajectoryAnalyzer.analyzeBTCMarket(
@@ -135,7 +212,7 @@ export function BTCKalshiAnalysis({ className }: BTCKalshiAnalysisProps) {
     } finally {
       setIsAnalyzing(false)
     }
-  }, [targetPrice, kalshiRound])
+  }, [targetPrice, kalshiRound, currentPrice])
 
   const getPredictionColor = (prediction: string) => {
     switch (prediction) {

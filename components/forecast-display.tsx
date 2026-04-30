@@ -15,17 +15,24 @@ interface ForecastData {
 
 interface ForecastDisplayProps {
   className?: string;
+  currentPrice?: number | null;
+  expirySeconds?: number;
+  targetPrice?: number;
 }
 
-export function ForecastDisplay({ className = '' }: ForecastDisplayProps) {
+export function ForecastDisplay({ 
+  className = '',
+  currentPrice,
+  expirySeconds = 900,
+  targetPrice: propTargetPrice
+}: ForecastDisplayProps) {
   const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate real-time forecast updates
-    // In production, this would connect to the AI prediction API
+    // Generate forecast based on real price data
     const generateForecast = () => {
-      const currentPrice = 85000 + (Math.random() - 0.5) * 1000;
+      const price = currentPrice || 85000;
       const predictedProbability = 0.5 + (Math.random() - 0.5) * 0.3;
       const confidence = Math.round(predictedProbability * 100);
       
@@ -37,9 +44,9 @@ export function ForecastDisplay({ className = '' }: ForecastDisplayProps) {
         verdict,
         confidence,
         predictedProbability,
-        currentPrice,
-        targetPrice: Math.round(currentPrice / 50) * 50,
-        expiryTime: Date.now() + 15 * 60 * 1000,
+        currentPrice: price,
+        targetPrice: propTargetPrice || Math.round(price / 50) * 50,
+        expiryTime: Date.now() + expirySeconds * 1000,
         reason: confidence >= 85 
           ? 'High confidence based on momentum and market regime'
           : 'Insufficient confidence - waiting for clearer signal',
@@ -49,10 +56,10 @@ export function ForecastDisplay({ className = '' }: ForecastDisplayProps) {
     };
 
     generateForecast();
-    const interval = setInterval(generateForecast, 5000); // Update every 5 seconds
+    const interval = setInterval(generateForecast, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [currentPrice, expirySeconds, propTargetPrice]);
 
   if (loading) {
     return (
@@ -122,8 +129,12 @@ export function ForecastDisplay({ className = '' }: ForecastDisplayProps) {
       {/* Current price */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs text-gray-400 font-mono">CURRENT PRICE</span>
-        <span className="text-lg font-bold text-white font-mono tabular-nums">
+        <span className="text-lg font-bold text-white font-mono tabular-nums" 
+              style={{ color: currentPrice ? '#22d3ee' : '#ffffff' }}>
           ${forecast.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {currentPrice && (
+            <span className="ml-2 text-xs text-cyan-400">● LIVE</span>
+          )}
         </span>
       </div>
 

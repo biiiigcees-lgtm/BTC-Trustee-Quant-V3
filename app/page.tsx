@@ -24,6 +24,7 @@ import { BetsLedger } from "@/components/bets-ledger";
 import { BTCKalshiAnalysis } from "@/components/btc-kalshi-analysis";
 import { BacktestStatsPanel } from "@/components/backtest-stats-panel";
 import { useExchangeData } from "@/lib/use-exchange-data";
+import { DashboardProvider, useDashboard } from "@/lib/dashboard-context";
 
 // ─── Technical indicator helpers ───────────────────────────────────────────
 
@@ -1174,7 +1175,7 @@ function getNextKalshiExpiryLabel(): string {
 
 // ─── Main page ─────────────────────────────────────────────────────────────
 
-export default function Page() {
+function UnifiedDashboard() {
   const [asset, setAsset] = useState<"BTC" | "ETH">("BTC");
   const assetRef = useRef<"BTC" | "ETH">("BTC");
 
@@ -1183,7 +1184,15 @@ export default function Page() {
   const [source, setSource] = useState<"loading" | "live" | "error">("loading");
   const [closes, setCloses] = useState<number[]>([]);
 
-  // Exchange data hook for real-time WebSocket
+  // Get synchronized data from dashboard context
+  const { time: timeSync, price: priceSync, kalshiConnected } = useDashboard();
+  
+  // Use synchronized time and price from context
+  const syncedPrice = priceSync.price;
+  const syncedPriceDir = priceSync.priceDir;
+  const syncedWindow = timeSync.currentWindow;
+
+  // Exchange data hook for WebSocket data
   const exchangeData = useExchangeData("BTC/USD");
 
   // Integrate exchangeData into price accumulation for live chart
@@ -1261,11 +1270,11 @@ export default function Page() {
   const [windowBias, setWindowBias] = useState<number | null>(null);
   const [momentumScore, setMomentumScore] = useState<number | null>(null);
 
-  // Kalshi synchronized countdown
-  const [expirySeconds, setExpirySeconds] = useState<number>(() => getSecondsToNextKalshi());
-  const [expiryLabel, setExpiryLabel] = useState<string>(() => getNextKalshiExpiryLabel());
+  // Kalshi synchronized countdown - uses context timeSync
+  const expirySeconds = timeSync.expirySeconds;
+  const expiryLabel = timeSync.expiryLabel;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const prevExpiryWindowRef = useRef<string>(getNextKalshiExpiryLabel());
+  const prevExpiryWindowRef = useRef<string>(expiryLabel);
 
   // Prediction
   const [target, setTarget] = useState("");
@@ -1878,9 +1887,7 @@ export default function Page() {
   // ── Kalshi wall-clock countdown + auto-predict on new window ──────────
   useEffect(() => {
     timerRef.current = setInterval(() => {
-      const newLabel = getNextKalshiExpiryLabel();
-      setExpirySeconds(getSecondsToNextKalshi());
-      setExpiryLabel(newLabel);
+      const newLabel = timeSync.expiryLabel;
 
       // Detect window rollover: auto-run prediction for the new window
       if (
@@ -2261,212 +2268,95 @@ export default function Page() {
           </div>
         </div>
 
-        {/* ── Tab navigation ──────────────────────────────────────────────── */}
-        <DashboardTabs active={activeTab} onChange={setActiveTab} />
-
-        {/* ── TAB CONTENT: DASHBOARD ─────────────────────────────────────────── */}
-        {activeTab === "dashboard" && (
-          <div className="flex flex-col gap-3 tab-content-enter">
-            {/* Price hero + countdown */}
-            <div className="flex gap-3 items-start">
-              <div className="flex-1">
-                <PriceHero asset={asset} price={price} priceDir={priceDir} change24h={change24h} verdict={result?.verdict ?? null} />
-              </div>
-              <CountdownRing seconds={expirySeconds} label="EXPIRES" />
+        {/* ── UNIFIED DASHBOARD (All-in-One View) ─────────────────────────── */}
+        <div className="flex flex-col gap-4">
+          {/* Price hero + synchronized countdown */}
+          <div className="flex gap-3 items-start">
+            <div className="flex-1">
+              <PriceHero asset={asset} price={syncedPrice || price} priceDir={syncedPriceDir || priceDir} change24h={change24h} verdict={result?.verdict ?? null} />
             </div>
+            <CountdownRing seconds={expirySeconds} label="EXPIRES" />
+          </div>
 
-            {/* Kalshi 15-min timer */}
-            <KXBTC15MTimer />
+          {/* Kalshi 15-min timer - synchronized */}
+          <KXBTC15MTimer expirySeconds={expirySeconds} currentWindow={syncedWindow} />
 
-            {/* Window bias + regime */}
-            {windowBias !== null && (
-              <div className="glass-card px-3 py-2 flex items-center gap-3">
-                <span className="uppercase tracking-widest" style={{ color: "var(--muted-foreground)", fontSize: "9px" }}>WINDOW BIAS</span>
-                <span className="font-bold tabular-nums" style={{
-                  fontSize: "12px",
-                  color: windowBias > 55 ? "var(--neon-green)" : windowBias < 45 ? "var(--neon-red)" : "var(--amber)",
-                }}>
-                  {windowBias.toFixed(0)}% UP ({closes.length} ticks)
-                </span>
-                <MarketRegimeBadge regime={marketRegime} size="sm" />
-              </div>
-            )}
-
-            {/* Live chart */}
-            <LiveChartPanel closes={closes} ema9={ema9} ema21={ema21} bb={bb} price={price} height={220} />
-
-            {/* Sparkline fallback */}
-            <div className="glass-card p-3">
-              <Sparkline prices={closes} height={48} />
+          {/* Window bias + regime */}
+          {windowBias !== null && (
+            <div className="glass-card px-3 py-2 flex items-center gap-3">
+              <span className="uppercase tracking-widest" style={{ color: "var(--muted-foreground)", fontSize: "9px" }}>WINDOW BIAS</span>
+              <span className="font-bold tabular-nums" style={{
+                fontSize: "12px",
+                color: windowBias > 55 ? "var(--neon-green)" : windowBias < 45 ? "var(--neon-red)" : "var(--amber)",
+              }}>
+                {windowBias.toFixed(0)}% UP ({closes.length} ticks)
+              </span>
+              <MarketRegimeBadge regime={marketRegime} size="sm" />
             </div>
+          )}
 
-            {/* Real-time forecast display */}
-            <ForecastDisplay />
+          {/* Live chart */}
+          <LiveChartPanel closes={closes} ema9={ema9} ema21={ema21} bb={bb} price={syncedPrice || price} height={220} />
 
-            {/* Bets ledger */}
-            <BetsLedger />
+          {/* Sparkline */}
+          <div className="glass-card p-3">
+            <Sparkline prices={closes} height={48} />
           </div>
-        )}
 
-        {/* ── TAB CONTENT: OPTIMIZER ─────────────────────────────────────────── */}
-        {activeTab === "optimizer" && (
-          <div className="tab-content-enter">
-            <AIOptimizerPanel
-              regime={marketRegime}
-              regimeConfidence={null}
-              models={[
-                { name: "Trajectory", accuracy: 65, weight: 25, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
-                { name: "Order Book", accuracy: 58, weight: 20, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
-                { name: "Technical", accuracy: 62, weight: 25, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
-                { name: "ML LightGBM", accuracy: 70, weight: 30, verdict: mlResult?.verdict ?? "PASS", confidence: mlResult?.confidence === "HIGH" ? 85 : mlResult?.confidence === "MEDIUM" ? 65 : 45 },
-              ]}
-              features={[
-                { feature: "RSI", importance: rsi !== null ? (rsi > 70 || rsi < 30 ? 0.85 : 0.4) : 0.5 },
-                { feature: "MACD", importance: macd !== null ? Math.abs(macd.histogram) / 0.01 : 0.3 },
-                { feature: "BB %B", importance: bb !== null ? Math.abs(bb.pctB - 0.5) * 2 : 0.4 },
-                { feature: "Flow", importance: obImbalance !== null ? Math.abs(obImbalance) / 0.1 : 0.3 },
-                { feature: "Funding", importance: fundingRate !== null ? Math.abs(fundingRate) / 0.001 : 0.2 },
-              ]}
-              rlEnabled={rlEnabled}
-              onToggleRL={setRlEnabled}
-              ensembleAccuracy={winRate}
-              totalPredictions={predHistory.length}
-              sharpeRatio={null}
-              maxDrawdown={null}
-              autoOptimizing={rlEnabled}
-            />
+          {/* AI Analysis Section - Synchronized */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <BTCKalshiAnalysis currentPrice={syncedPrice} expirySeconds={expirySeconds} />
+            <ForecastDisplay currentPrice={syncedPrice} expirySeconds={expirySeconds} targetPrice={target ? parseFloat(target) : undefined} />
           </div>
-        )}
 
-        {/* ── TAB CONTENT: TRADE (existing prediction UI) ─────────────────── */}
-        {activeTab === "trade" && (
-          <div className="flex flex-col gap-3 tab-content-enter">
-            {/* Trade controls */}
-            <TradeControls currentPrice={price ?? 0} />
+          {/* Market Intel Panel */}
+          <KalshiMarketPanel
+            target={target}
+            price={syncedPrice || price}
+            predictionResult={result}
+            bankroll={bankroll}
+            onTargetChange={setTarget}
+          />
 
-            {/* Prediction input */}
-            <div className="glass-card p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="uppercase tracking-widest" style={{ color: "var(--muted-foreground)", fontSize: "9px" }}>TARGET PRICE</span>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  placeholder={price !== null ? String(price) : "---"}
-                  className="flex-1 px-3 py-2 rounded-lg font-bold tabular-nums"
-                  style={{
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--border)",
-                    color: "var(--foreground)",
-                    fontSize: "14px",
-                    fontFamily: "inherit",
-                  }}
-                />
-                <button
-                  onClick={runPrediction}
-                  disabled={loading || price === null}
-                  className="px-4 py-2 rounded-lg font-bold transition-all"
-                  style={{
-                    background: loading ? "var(--surface-2)" : "rgba(0,255,231,0.1)",
-                    border: `1px solid ${loading ? "var(--border)" : "var(--cyan)"}`,
-                    color: loading ? "var(--muted-foreground)" : "var(--cyan)",
-                    fontSize: "11px",
-                    letterSpacing: "0.08em",
-                    cursor: loading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {loading ? "ANALYZING..." : "PREDICT"}
-                </button>
-              </div>
-              {targetError && (
-                <p style={{ color: "var(--neon-red)", fontSize: "10px", marginTop: "8px" }}>{targetError}</p>
-              )}
-            </div>
+          {/* Signal Engine */}
+          <SignalEnginePanel signals={signals} onClear={() => setSignals([])} />
 
-            {/* Verdict hero */}
-            {result && (
-              <VerdictHero
-                verdict={result.verdict}
-                confidence={result.confidence}
-                ev={result.ev}
-                kelly={result.kelly}
-                reasoning={result.reasoning}
-                modelVotes={result.modelVotes}
-                modelAgreement={result.modelAgreement}
-              />
-            )}
+          {/* Bets ledger */}
+          <BetsLedger />
 
-            {/* Bankroll */}
-            <KalshiBankrollPanel
-              bankroll={bankroll}
-              predHistory={predHistory}
-              onReset={() => {
-                setBankroll(1000);
-                localStorage.setItem("btc-bankroll", "1000");
-              }}
-            />
+          {/* AI Optimizer */}
+          <AIOptimizerPanel
+            regime={marketRegime}
+            regimeConfidence={null}
+            models={[
+              { name: "Trajectory", accuracy: 65, weight: 25, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
+              { name: "Order Book", accuracy: 58, weight: 20, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
+              { name: "Technical", accuracy: 62, weight: 25, verdict: result?.verdict ?? "PASS", confidence: result?.confidence ?? 50 },
+              { name: "ML LightGBM", accuracy: 70, weight: 30, verdict: mlResult?.verdict ?? "PASS", confidence: mlResult?.confidence === "HIGH" ? 85 : mlResult?.confidence === "MEDIUM" ? 65 : 45 },
+            ]}
+            features={[
+              { feature: "RSI", importance: rsi !== null ? (rsi > 70 || rsi < 30 ? 0.85 : 0.4) : 0.5 },
+              { feature: "MACD", importance: macd !== null ? Math.abs(macd.histogram) / 0.01 : 0.3 },
+              { feature: "BB %B", importance: bb !== null ? Math.abs(bb.pctB - 0.5) * 2 : 0.4 },
+              { feature: "Flow", importance: obImbalance !== null ? Math.abs(obImbalance) / 0.1 : 0.3 },
+              { feature: "Funding", importance: fundingRate !== null ? Math.abs(fundingRate) / 0.001 : 0.2 },
+            ]}
+            rlEnabled={rlEnabled}
+            onToggleRL={setRlEnabled}
+            ensembleAccuracy={winRate}
+            totalPredictions={predHistory.length}
+            sharpeRatio={null}
+            maxDrawdown={null}
+            autoOptimizing={rlEnabled}
+          />
 
-            {/* Prediction history */}
-            <PredictionHistory history={predHistory} />
-          </div>
-        )}
+          {/* Trade Controls */}
+          <TradeControls currentPrice={syncedPrice || price || 0} />
 
-        {/* ── TAB CONTENT: ALERTS & SETTINGS ───────────────────────────────── */}
-        {activeTab === "alerts" && (
-          <div className="flex flex-col gap-3 tab-content-enter">
-            <PriceAlertManager
-              alerts={priceAlerts}
-              alertInput={alertInput}
-              currentPrice={price}
-              onInputChange={setAlertInput}
-              onAdd={(p, d) => setPriceAlerts((prev) => [...prev, { price: p, direction: d }])}
-              onRemove={(i) => setPriceAlerts((prev) => prev.filter((_, idx) => idx !== i))}
-              notifPermission={notifPermission}
-              onRequestPermission={() => {
-                if ("Notification" in window) {
-                  Notification.requestPermission().then((p) => setNotifPermission(p));
-                }
-              }}
-            />
-            <SettingsPanel
-              aggressiveness={aggressiveness}
-              onAggressivenessChange={setAggressiveness}
-              alertThreshold={alertThreshold}
-              onAlertThresholdChange={setAlertThreshold}
-              showExplainability={showExplainability}
-              onShowExplainabilityChange={setShowExplainability}
-              compactMode={compactMode}
-              onCompactModeChange={setCompactMode}
-            />
-          </div>
-        )}
+          {/* Diary View */}
+          <DiaryView />
+        </div>
 
-        {/* ── TAB CONTENT: ANALYSIS ─────────────────────────────────────────── */}
-        {activeTab === "analysis" && (
-          <div className="flex flex-col gap-3 tab-content-enter">
-            {/* AI Analysis Panel */}
-            <BTCKalshiAnalysis />
-
-            {/* Existing market intel panels */}
-            <KalshiMarketPanel
-              target={target}
-              price={price}
-              predictionResult={result}
-              bankroll={bankroll}
-              onTargetChange={setTarget}
-            />
-            <SignalEnginePanel
-              signals={signals}
-              onClear={() => setSignals([])}
-            />
-            <BacktestStatsPanel result={null} />
-
-            {/* Secret diary view */}
-            <DiaryView />
-          </div>
-        )}
 
         {/* ── Footer ──────────────────────────────────────────── */}
         <p className="text-center pb-4" style={{ color: "var(--muted-foreground)", fontSize: "10px", letterSpacing: "0.05em" }}>
@@ -2475,5 +2365,14 @@ export default function Page() {
 
       </div>
     </main>
+  );
+}
+
+// Wrapper with DashboardProvider for synchronization
+export default function Home() {
+  return (
+    <DashboardProvider>
+      <UnifiedDashboard />
+    </DashboardProvider>
   );
 }

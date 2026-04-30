@@ -5,14 +5,30 @@ import { BRTISettlementCalculator } from '@/lib/brti-settlement';
 
 interface KXBTC15MTimerProps {
   className?: string;
+  expirySeconds?: number;
+  currentWindow?: number;
 }
 
-export function KXBTC15MTimer({ className = '' }: KXBTC15MTimerProps) {
+export function KXBTC15MTimer({ 
+  className = '',
+  expirySeconds: propExpirySeconds,
+  currentWindow: propCurrentWindow
+}: KXBTC15MTimerProps) {
   const [nextExpiry, setNextExpiry] = useState<number>(0);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [currentWindow, setCurrentWindow] = useState<number>(0);
 
   useEffect(() => {
+    // If props provided, use them (synchronized)
+    if (propExpirySeconds !== undefined) {
+      setTimeRemaining(propExpirySeconds * 1000);
+    }
+    if (propCurrentWindow !== undefined) {
+      setCurrentWindow(propCurrentWindow);
+      return;
+    }
+    
+    // Otherwise calculate locally
     const updateTimer = () => {
       const now = Date.now();
       const expiry = BRTISettlementCalculator.getNextKXBTC15MExpiry(now);
@@ -28,13 +44,17 @@ export function KXBTC15MTimer({ className = '' }: KXBTC15MTimerProps) {
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [propExpirySeconds, propCurrentWindow]);
 
-  const minutes = Math.floor(timeRemaining / 60000);
-  const seconds = Math.floor((timeRemaining % 60000) / 1000);
-  const milliseconds = timeRemaining % 1000;
+  // Use prop values if available, otherwise use local state
+  const displayTimeRemaining = propExpirySeconds !== undefined ? propExpirySeconds * 1000 : timeRemaining;
+  const displayWindow = propCurrentWindow !== undefined ? propCurrentWindow : currentWindow;
+  
+  const minutes = Math.floor(displayTimeRemaining / 60000);
+  const seconds = Math.floor((displayTimeRemaining % 60000) / 1000);
+  const milliseconds = displayTimeRemaining % 1000;
 
-  const progress = timeRemaining / (15 * 60 * 1000); // 15 minutes in ms
+  const progress = displayTimeRemaining / (15 * 60 * 1000); // 15 minutes in ms
 
   return (
     <div className={`font-mono ${className}`}>
