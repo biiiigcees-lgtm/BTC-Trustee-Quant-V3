@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 
 export async function GET(request: NextRequest) {
+  if (!process.env.POSTGRES_URL) {
+    return NextResponse.json(
+      { error: 'Missing env var: POSTGRES_URL' },
+      { status: 500 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || 'default';
@@ -37,6 +44,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!process.env.POSTGRES_URL) {
+    return NextResponse.json(
+      { error: 'Missing env var: POSTGRES_URL' },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await request.json();
     const {
