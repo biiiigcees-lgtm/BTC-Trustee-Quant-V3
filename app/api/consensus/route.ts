@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Configure Edge runtime for this API route
-export const runtime = "edge";
+export const dynamic = "force-dynamic";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AI CONSENSUS VOTING API — Multi-provider parallel consensus for BTC direction
