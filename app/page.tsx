@@ -1184,6 +1184,72 @@ export default function Page() {
   // Exchange data hook for real-time WebSocket
   const exchangeData = useExchangeData("BTC/USD");
 
+  // Integrate exchangeData into price accumulation for live chart
+  useEffect(() => {
+    if (exchangeData.aggregatedPrice && exchangeData.aggregatedPrice > 0) {
+      const newPrice = exchangeData.aggregatedPrice;
+      
+      // Update price state
+      setPrice(newPrice);
+      setSource("live");
+      
+      // Update price direction
+      if (prevPriceRef.current !== null) {
+        setPriceDir(newPrice > prevPriceRef.current ? "up" : newPrice < prevPriceRef.current ? "down" : "");
+      }
+      prevPriceRef.current = newPrice;
+      
+      // Add to closes array for chart
+      setCloses((prev) => {
+        const newCloses = [...prev, newPrice];
+        // Keep last 200 data points
+        if (newCloses.length > 200) {
+          newCloses.shift();
+        }
+        return newCloses;
+      });
+      
+      // Recalculate indicators with new price
+      setTimeout(() => {
+        const currentCloses = [...closesRef.current, newPrice];
+        if (currentCloses.length >= 2) {
+          const newEma9 = calcEMA(currentCloses, 9);
+          const newEma21 = calcEMA(currentCloses, 21);
+          const newRsi = calcRSI(currentCloses);
+          const newMacd = calcMACD(currentCloses);
+          const newBb = calcBollingerBands(currentCloses);
+          const newWindowBias = calcWindowBias(currentCloses);
+          const newMomentum = calcMomentumScore(newRsi, newMacd, newBb, newEma9, newEma21, newWindowBias);
+          const newAtr = calcATR(currentCloses);
+          const newStochRsi = calcStochRSI(currentCloses);
+          const newRegime = detectMarketRegime(newEma9, newEma21, newBb, newAtr, newPrice);
+          
+          setEma9(newEma9);
+          setEma21(newEma21);
+          setRsi(newRsi);
+          setMacd(newMacd);
+          setBb(newBb);
+          setWindowBias(newWindowBias);
+          setMomentumScore(newMomentum);
+          setAtr(newAtr);
+          setStochRsi(newStochRsi);
+          setMarketRegime(newRegime);
+          
+          // Update refs
+          ema9Ref.current = newEma9;
+          ema21Ref.current = newEma21;
+          rsiRef.current = newRsi;
+          macdRef.current = newMacd;
+          bbRef.current = newBb;
+          windowBiasRef.current = newWindowBias;
+          atrRef.current = newAtr;
+          stochRsiRef.current = newStochRsi;
+          marketRegimeRef.current = newRegime;
+        }
+      }, 0);
+    }
+  }, [exchangeData.aggregatedPrice]);
+
   // Indicators
   const [ema9, setEma9] = useState<number | null>(null);
   const [ema21, setEma21] = useState<number | null>(null);
