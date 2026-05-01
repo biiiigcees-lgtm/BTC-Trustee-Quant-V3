@@ -10,6 +10,7 @@ interface ProviderResult {
   confidence: number;
   reasoning: string;
   status: "ok" | "error" | "unavailable";
+  errorReason?: string;
 }
 
 interface ConsensusData {
@@ -219,7 +220,7 @@ export function ConsensusPanel() {
               {data.consensus}
             </div>
             <div className="text-sm text-muted">
-              {winningVotes}/{availableProviders.length} providers agree · {data.agreementScore}% agreement
+              {winningVotes}/{totalProviders} providers agree · {data.agreementScore}% agreement
             </div>
             <div className="text-xs text-muted mt-1">
               Weighted confidence: {data.weightedScore}%
@@ -268,7 +269,14 @@ export function ConsensusPanel() {
                   )}`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-medium capitalize">{provider.name}</span>
+                    <div className="flex flex-col">
+                      <span className="font-medium capitalize">{provider.name}</span>
+                      {provider.status === "error" && provider.errorReason && (
+                        <span className="text-[10px] text-muted">
+                          {provider.errorReason}
+                        </span>
+                      )}
+                    </div>
                     {provider.status === "ok" && (
                       <Activity className="w-3 h-3 opacity-70" />
                     )}

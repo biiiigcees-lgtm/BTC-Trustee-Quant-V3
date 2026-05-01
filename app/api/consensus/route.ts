@@ -41,6 +41,7 @@ interface ProviderResult {
   confidence: number;
   reasoning: string;
   status: "ok" | "error" | "unavailable";
+  errorReason?: string;
 }
 
 interface ConsensusResponse {
@@ -125,7 +126,8 @@ async function queryGroq(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -148,8 +150,9 @@ async function queryGroq(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -181,7 +184,8 @@ async function queryOpenAI(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -204,8 +208,9 @@ async function queryOpenAI(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -235,7 +240,8 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -258,8 +264,9 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -291,7 +298,8 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -314,8 +322,9 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -347,7 +356,8 @@ async function queryCerebras(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -370,8 +380,9 @@ async function queryCerebras(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -403,7 +414,8 @@ async function querySiliconFlow(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -426,8 +438,9 @@ async function querySiliconFlow(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -461,7 +474,8 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+      const errorText = `${response.status} ${response.statusText}`;
+      return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
     }
 
     const data = await response.json();
@@ -484,8 +498,9 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
       reasoning: String(parsed.reasoning || "").slice(0, 100),
       status: "ok",
     };
-  } catch {
-    return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : "Network error";
+    return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
   }
 }
 
@@ -510,9 +525,10 @@ function computeConsensus(providers: ProviderResult[]): ConsensusResponse {
     consensus = "SPLIT";
   }
 
-  // Agreement score: (winning votes / total available) * 100
+  // Agreement score: (winning votes / total attempted) * 100
   const winningCount = Math.max(aboveCount, belowCount);
-  const agreementScore = totalAvailable > 0 ? Math.round((winningCount / totalAvailable) * 100) : 0;
+  const totalAttempted = providers.length;
+  const agreementScore = totalAttempted > 0 ? Math.round((winningCount / totalAttempted) * 100) : 0;
 
   // Weighted score: average confidence of providers voting for winning direction
   // Apply weight multiplier: 1x if confidence >= 55, 0.5x if < 55
