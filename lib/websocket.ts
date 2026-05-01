@@ -177,9 +177,9 @@ export class PriceFeedSimulator {
     };
   }
   
-  start(basePrice: number = 85000, intervalMs: number = 1000): void {
+  start(basePrice: number = 0, intervalMs: number = 1000): void {
     if (this.interval) return;
-    
+
     let price = basePrice;
     
     this.interval = setInterval(() => {

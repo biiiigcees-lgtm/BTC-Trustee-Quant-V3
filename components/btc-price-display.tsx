@@ -25,69 +25,50 @@ interface PricePoint {
 
 interface BTCPriceDisplayProps {
   className?: string
+  price?: number | null
+  priceDir?: 'up' | 'down' | ''
+  lastUpdate?: number | null
+  isConnected?: boolean
 }
 
-export function BTCPriceDisplay({ className }: BTCPriceDisplayProps) {
+export function BTCPriceDisplay({
+  className,
+  price: syncedPrice,
+  priceDir: syncedPriceDir,
+  lastUpdate: syncedLastUpdate,
+  isConnected: syncedIsConnected
+}: BTCPriceDisplayProps) {
   const [currentPrice, setCurrentPrice] = useState<PricePoint | null>(null)
   const [isConnected, setIsConnected] = useState(false)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const initializedRef = useRef(false)
+  const prevPriceRef = useRef<number | null>(null)
 
-  // Initialize with mock data - only run once
+  // Update with synchronized price data from context (single source of truth)
   useEffect(() => {
-    if (initializedRef.current) return
-    initializedRef.current = true
+    if (syncedPrice && syncedPrice > 0) {
+      const prevPrice = prevPriceRef.current
+      const change = prevPrice !== null ? syncedPrice - prevPrice : 0
+      const changePercent = prevPrice !== null ? (change / prevPrice) * 100 : 0
 
-    const basePrice = 65000
-    const randomChange = (Math.random() - 0.5) * 0.002 // ±0.2% change
-    const price = basePrice * (1 + randomChange)
-    const volume = 20000000000 + Math.random() * 10000000000
+      setCurrentPrice(prev => ({
+        price: syncedPrice,
+        timestamp: syncedLastUpdate || Date.now(),
+        volume: 20000000000 + Math.random() * 10000000000,
+        high: Math.max(syncedPrice * 1.001, prev?.high || syncedPrice),
+        low: Math.min(syncedPrice * 0.999, prev?.low || syncedPrice),
+        change,
+        changePercent
+      }))
 
-    const pricePoint: PricePoint = {
-      price,
-      timestamp: Date.now(),
-      volume,
-      high: price * 1.001,
-      low: price * 0.999,
-      change: price - basePrice,
-      changePercent: ((price - basePrice) / basePrice) * 100
+      prevPriceRef.current = syncedPrice
+      setIsConnected(syncedIsConnected !== false)
     }
-
-    setCurrentPrice(pricePoint)
-    setIsConnected(true)
-
-    // Simulate live updates
-    intervalRef.current = setInterval(() => {
-      setCurrentPrice(prevPrice => {
-        if (!prevPrice) return prevPrice
-        
-        const randomChange = (Math.random() - 0.5) * 0.001 // ±0.1% change
-        const newPrice = prevPrice.price * (1 + randomChange)
-        const volume = 20000000000 + Math.random() * 10000000000
-
-        const newPoint: PricePoint = {
-          price: newPrice,
-          timestamp: Date.now(),
-          volume,
-          high: Math.max(prevPrice.high, newPrice),
-          low: Math.min(prevPrice.low, newPrice),
-          change: newPrice - prevPrice.price + prevPrice.change,
-          changePercent: ((newPrice - prevPrice.price + prevPrice.change) / prevPrice.price) * 100
-        }
-
-        return newPoint
-      })
-    }, 2000)
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-    }
-  }, []) // Empty dependency array ensures this only runs once
+  }, [syncedPrice, syncedLastUpdate, syncedIsConnected])
 
   const getPriceColor = (change: number) => {
+    // Use synchronized price direction if available
+    if (syncedPriceDir) {
+      return syncedPriceDir === 'up' ? 'text-green-400' : syncedPriceDir === 'down' ? 'text-red-400' : 'text-gray-400'
+    }
     return change > 0 ? 'text-green-400' : change < 0 ? 'text-red-400' : 'text-gray-400'
   }
 

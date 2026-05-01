@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { IBM_Plex_Mono } from 'next/font/google'
 import './globals.css'
+import { AuthProvider } from '@/lib/auth'
 
 const ibmPlexMono = IBM_Plex_Mono({
   subsets: ['latin'],
@@ -9,22 +10,22 @@ const ibmPlexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'BTC Binary Oracle — AI-Powered Trading Terminal',
-  description: 'Advanced BTC prediction terminal with AI optimizer, live charts, technical indicators, and ensemble model analysis.',
+  title: 'BTC Trustee Quant V3 — Premium Trading Terminal',
+  description: 'World-class premium fintech trading terminal with real-time BTC signals, advanced charts, and AI-powered analysis.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'BTC Oracle',
+    title: 'BTC Trustee Quant',
   },
   formatDetection: {
     telephone: false,
   },
-  applicationName: 'BTC Binary Oracle',
+  applicationName: 'BTC Trustee Quant V3',
 }
 
 export const viewport: Viewport = {
-  themeColor: '#00ffe7',
+  themeColor: '#0B0F19',
   width: 'device-width',
   initialScale: 1,
   minimumScale: 1,
@@ -40,7 +41,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="bg-background">
       <body className={`${ibmPlexMono.variable} antialiased`}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )

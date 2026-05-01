@@ -413,6 +413,21 @@ export class KalshiBacktestEngine {
   }
 
   /**
+   * Fetch current BTC price from Coinbase for synthetic data generation
+   */
+  private static async fetchCurrentBTCPrice(): Promise<number> {
+    try {
+      const response = await fetch('https://api.coinbase.com/v2/exchange-rates?currency=BTC');
+      if (!response.ok) throw new Error('Coinbase API failed');
+      const data = await response.json();
+      return parseFloat(data.data.rates.USD) || 75000; // Fallback to reasonable price
+    } catch (error) {
+      console.error('Failed to fetch current BTC price, using fallback:', error);
+      return 75000; // Reasonable fallback price
+    }
+  }
+
+  /**
    * Fetch historical KXBTC15M markets from Kalshi API
    * Uses Kalshi key ID and private key for authentication
    */
@@ -424,7 +439,8 @@ export class KalshiBacktestEngine {
 
     if (!jwt) {
       console.warn('Kalshi JWT not configured, using synthetic data');
-      return this.generateSyntheticMarkets(startTime, endTime);
+      const currentPrice = await this.fetchCurrentBTCPrice();
+      return this.generateSyntheticMarkets(startTime, endTime, currentPrice);
     }
 
     try {
@@ -444,7 +460,8 @@ export class KalshiBacktestEngine {
 
       if (!response.ok) {
         console.error(`Kalshi API error: ${response.status} ${response.statusText}`);
-        return this.generateSyntheticMarkets(startTime, endTime);
+        const currentPrice = await this.fetchCurrentBTCPrice();
+        return this.generateSyntheticMarkets(startTime, endTime, currentPrice);
       }
 
       const data = await response.json();
@@ -458,10 +475,11 @@ export class KalshiBacktestEngine {
         noPrice: m.no_price,
         impliedProbability: m.implied_probability,
         contractType: m.contract_type,
-      })) || this.generateSyntheticMarkets(startTime, endTime);
+      })) || this.generateSyntheticMarkets(startTime, endTime, await this.fetchCurrentBTCPrice());
     } catch (error) {
       console.error('Failed to fetch Kalshi historical data:', error);
-      return this.generateSyntheticMarkets(startTime, endTime);
+      const currentPrice = await this.fetchCurrentBTCPrice();
+      return this.generateSyntheticMarkets(startTime, endTime, currentPrice);
     }
   }
 
@@ -471,7 +489,7 @@ export class KalshiBacktestEngine {
   static generateSyntheticMarkets(
     startTime: number,
     endTime: number,
-    basePrice: number = 85000
+    basePrice: number = 0
   ): KalshiMarket[] {
     const markets: KalshiMarket[] = [];
     const expiries = BRTISettlementCalculator.getKXBTC15MExpiryRange(startTime, endTime);
@@ -501,7 +519,7 @@ export class KalshiBacktestEngine {
   static generateSyntheticPriceHistory(
     startTime: number,
     endTime: number,
-    basePrice: number = 85000
+    basePrice: number = 0
   ): BRTIPricePoint[] {
     const history: BRTIPricePoint[] = [];
     let currentPrice = basePrice;

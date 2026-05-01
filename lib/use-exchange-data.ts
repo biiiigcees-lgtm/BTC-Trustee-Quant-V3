@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { priceAggregator } from './exchange-websockets';
 import { getKalshiWebSocket, type KalshiMarketUpdate } from './kalshi-websocket';
 
@@ -25,11 +25,38 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
     kalshiConnected: false,
   });
 
+  const restFallbackInterval = useRef<NodeJS.Timeout | null>(null);
+  const wsConnectedRef = useRef(false);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
     let mounted = true;
+    mountedRef.current = true;
+    wsConnectedRef.current = false;
+
+    // REST fallback: fetch from /api/btc when WebSockets are down
+    const fetchRestFallback = async () => {
+      try {
+        const res = await fetch('/api/btc');
+        if (!res.ok) throw new Error('REST fallback failed');
+        const btcData = await res.json();
+
+        if (btcData.price && mountedRef.current) {
+          setData((prev) => ({
+            ...prev,
+            aggregatedPrice: btcData.price,
+            lastUpdate: Date.now(),
+            isConnected: false, // Using REST, not WS
+          }));
+        }
+      } catch (error) {
+        console.error('REST fallback error:', error);
+      }
+    };
 
     const handleBinanceUpdate = (update: any) => {
       if (!mounted) return;
+      wsConnectedRef.current = true;
       setData((prev) => ({
         ...prev,
         binancePrice: update.price,
@@ -40,6 +67,7 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
 
     const handleKrakenUpdate = (update: any) => {
       if (!mounted) return;
+      wsConnectedRef.current = true;
       setData((prev) => ({
         ...prev,
         krakenPrice: update.price,
@@ -50,6 +78,7 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
 
     const handleAggregatedUpdate = (update: any) => {
       if (!mounted) return;
+      wsConnectedRef.current = true;
       setData((prev) => ({
         ...prev,
         aggregatedPrice: update.price,
@@ -88,11 +117,13 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
       onMarketUpdate: handleKalshiUpdate,
       onConnect: () => {
         if (mounted) {
+          wsConnectedRef.current = true;
           setData((prev) => ({ ...prev, kalshiConnected: true }));
         }
       },
       onDisconnect: () => {
         if (mounted) {
+          wsConnectedRef.current = false;
           setData((prev) => ({ ...prev, kalshiConnected: false }));
         }
       },
@@ -102,8 +133,24 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
 
     kalshiWS.connect();
 
+    // Start REST fallback polling (every 5 seconds if WS not connected)
+    restFallbackInterval.current = setInterval(() => {
+      if (!wsConnectedRef.current && mounted) {
+        fetchRestFallback();
+      }
+    }, 5000);
+
+    // Initial REST fetch if no WS data after 3 seconds
+    const initialFallbackTimeout = setTimeout(() => {
+      if (!wsConnectedRef.current && mounted && !data.aggregatedPrice) {
+        fetchRestFallback();
+      }
+    }, 3000);
+
     return () => {
       mounted = false;
+      if (restFallbackInterval.current) clearInterval(restFallbackInterval.current);
+      clearTimeout(initialFallbackTimeout);
       priceAggregator.disconnectExchange('binance', 'BTCUSDT');
       priceAggregator.disconnectExchange('kraken', symbol);
       kalshiWS.disconnect();

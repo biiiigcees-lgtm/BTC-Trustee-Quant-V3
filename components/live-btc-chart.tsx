@@ -45,55 +45,14 @@ export function LiveBTCChart({ className, data: externalData, signals }: LiveBTC
   const animationRef = useRef<number | undefined>(undefined)
   const wsRef = useRef<WebSocket | null>(null)
 
-  // Initialize with realistic market data or use external data
+  // Initialize with external data from context (single source of truth)
   useEffect(() => {
     if (externalData && externalData.length > 0) {
       setPriceData(externalData)
       setCurrentPrice(externalData[externalData.length - 1])
       setIsConnected(true)
-      return
     }
-
-    const initializeData = () => {
-      const basePrice = 65000
-      const mockData: OHLC[] = []
-      let currentPrice = basePrice
-      let trend = 0.0001 // Base trend
-      let volatility = 0.001 // Base volatility
-      
-      for (let i = 100; i >= 0; i--) {
-        const timestamp = Date.now() - (i * 2 * 60 * 1000) // 2-minute intervals for more data
-        
-        // Simulate realistic market patterns
-        const marketSentiment = Math.sin(i * 0.1) * 0.0005 // Cyclical sentiment
-        const newsImpact = Math.random() < 0.1 ? (Math.random() - 0.5) * 0.002 : 0 // Occasional news
-        const whaleActivity = Math.random() < 0.05 ? (Math.random() - 0.5) * 0.003 : 0 // Whale movements
-        
-        // Combine all factors
-        const priceMovement = trend + marketSentiment + newsImpact + whaleActivity + (Math.random() - 0.5) * volatility
-        currentPrice = currentPrice * (1 + priceMovement)
-        
-        // Volume correlates with volatility and price movements
-        const baseVolume = 25000000000
-        const volumeMultiplier = Math.abs(priceMovement) * 1000 + Math.random() * 0.5 + 0.5
-        const volume = baseVolume * volumeMultiplier
-        
-        mockData.push({
-          timestamp,
-          open: currentPrice * 0.999,
-          high: currentPrice * 1.0015,
-          low: currentPrice * 0.9985,
-          close: currentPrice,
-          volume,
-        })
-      }
-      
-      setPriceData(mockData)
-      setCurrentPrice(mockData[mockData.length - 1])
-      setIsConnected(true)
-    }
-
-    initializeData()
+    // If no external data, show loading state instead of generating mock data
   }, [externalData])
 
   // Simulate live price updates with realistic market patterns
@@ -113,7 +72,7 @@ export function LiveBTCChart({ className, data: externalData, signals }: LiveBTC
         // Realistic market factors
         const momentumFactor = momentum * 0.0002 // Momentum continuation
         const volatilitySpike = Math.random() < 0.1 ? (Math.random() - 0.5) * 0.002 : 0 // Occasional volatility spikes
-        const meanReversion = (65000 - lastPrice.close) * 0.0001 // Tendency to return to mean
+        const meanReversion = (priceData[0]?.close - lastPrice.close) * 0.0001 // Tendency to return to mean (uses first data point)
         const randomWalk = (Math.random() - 0.5) * volatility
         
         // Combine factors for realistic price movement

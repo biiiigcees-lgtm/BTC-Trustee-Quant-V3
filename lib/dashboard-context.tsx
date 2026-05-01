@@ -20,6 +20,7 @@ export interface PriceSync {
   krakenPrice: number | null;
   aggregatedPrice: number | null;
   lastUpdate: number | null;
+  isStale: boolean;
 }
 
 export interface DashboardState {
@@ -100,14 +101,21 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     isExpiringSoon: expirySeconds < 60,
   }), [expirySeconds, expiryLabel, currentWindow]);
   
-  const priceSync: PriceSync = useMemo(() => ({
-    price,
-    priceDir,
-    binancePrice: exchangeData.binancePrice,
-    krakenPrice: exchangeData.krakenPrice,
-    aggregatedPrice: exchangeData.aggregatedPrice,
-    lastUpdate: exchangeData.lastUpdate,
-  }), [price, priceDir, exchangeData]);
+  const priceSync: PriceSync = useMemo(() => {
+    const isStale = exchangeData.lastUpdate
+      ? (Date.now() - exchangeData.lastUpdate) > 10000 // 10 seconds threshold
+      : true;
+
+    return {
+      price,
+      priceDir,
+      binancePrice: exchangeData.binancePrice,
+      krakenPrice: exchangeData.krakenPrice,
+      aggregatedPrice: exchangeData.aggregatedPrice,
+      lastUpdate: exchangeData.lastUpdate,
+      isStale,
+    };
+  }, [price, priceDir, exchangeData]);
   
   const value: DashboardState = useMemo(() => ({
     time: timeSync,

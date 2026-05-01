@@ -29,56 +29,8 @@ export function BetsLedger({ userId = 'default', className = '' }: BetsLedgerPro
 
   useEffect(() => {
     // In production, fetch from API
-    // For now, use mock data
-    const mockBets: Bet[] = [
-      {
-        id: '1',
-        ticker: 'KXBTC15M',
-        betType: 'YES',
-        contractType: 'ABOVE',
-        strikePrice: 85000,
-        amount: 100,
-        entryPrice: 55,
-        outcome: 'WIN',
-        payout: 181.82,
-        profitLoss: 81.82,
-        confidence: 87,
-        expiryTime: Date.now() - 3600000,
-        createdAt: Date.now() - 7200000,
-      },
-      {
-        id: '2',
-        ticker: 'KXBTC15M',
-        betType: 'NO',
-        contractType: 'ABOVE',
-        strikePrice: 85200,
-        amount: 100,
-        entryPrice: 48,
-        outcome: 'LOSS',
-        payout: 0,
-        profitLoss: -100,
-        confidence: 72,
-        expiryTime: Date.now() - 1800000,
-        createdAt: Date.now() - 5400000,
-      },
-      {
-        id: '3',
-        ticker: 'KXBTC15M',
-        betType: 'YES',
-        contractType: 'ABOVE',
-        strikePrice: 84800,
-        amount: 100,
-        entryPrice: 62,
-        outcome: 'PENDING',
-        payout: 0,
-        profitLoss: 0,
-        confidence: 91,
-        expiryTime: Date.now() + 900000,
-        createdAt: Date.now() - 600000,
-      },
-    ];
-
-    setBets(mockBets);
+    // For now, use empty state (no hardcoded mock strikes)
+    setBets([]);
     setLoading(false);
   }, [userId]);
 

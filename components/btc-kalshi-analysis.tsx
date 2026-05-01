@@ -51,10 +51,13 @@ export function BTCKalshiAnalysis({ className, currentPrice, expirySeconds }: BT
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now())
   const [countdown, setCountdown] = useState<string>("")
 
-  // Initialize with real-time BTC data
+  // Initialize with real-time BTC data from context (single source of truth)
   useEffect(() => {
     const initializeData = async () => {
-      const price = currentPrice || 85000
+      // Only initialize if we have a real price from context
+      if (!currentPrice) return
+
+      const price = currentPrice
       const volume = 20_000_000_000 + (Math.random() - 0.5) * 10_000_000_000
       const currentBTCData: BTCMarketData = {
         price,
@@ -166,7 +169,10 @@ export function BTCKalshiAnalysis({ className, currentPrice, expirySeconds }: BT
 
     setIsAnalyzing(true)
     try {
-      const price = currentPrice || parseFloat(targetPrice) || 85000
+      // Only refresh if we have a real price from context
+      if (!currentPrice) return
+
+      const price = currentPrice
       const volume = 20_000_000_000 + (Math.random() - 0.5) * 10_000_000_000
       const currentBTCData: BTCMarketData = {
         price,

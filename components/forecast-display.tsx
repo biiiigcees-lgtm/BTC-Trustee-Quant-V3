@@ -30,13 +30,16 @@ export function ForecastDisplay({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Generate forecast based on real price data
+    // Generate forecast based on real price data from context (single source of truth)
     const generateForecast = () => {
-      const price = currentPrice || 85000;
+      // Only generate forecast if we have a real price from context
+      if (!currentPrice) return;
+
+      const price = currentPrice;
       const predictedProbability = 0.5 + (Math.random() - 0.5) * 0.3;
       const confidence = Math.round(predictedProbability * 100);
-      
-      const verdict = confidence >= 85 
+
+      const verdict = confidence >= 85
         ? (predictedProbability > 0.5 ? 'ABOVE' : 'BELOW')
         : 'PASS';
 
@@ -47,7 +50,7 @@ export function ForecastDisplay({
         currentPrice: price,
         targetPrice: propTargetPrice || Math.round(price / 50) * 50,
         expiryTime: Date.now() + expirySeconds * 1000,
-        reason: confidence >= 85 
+        reason: confidence >= 85
           ? 'High confidence based on momentum and market regime'
           : 'Insufficient confidence - waiting for clearer signal',
         isSafeBet: confidence >= 90,

@@ -21,6 +21,16 @@ export function formatCurrency(num: number, currency = 'USD'): string {
   }).format(num)
 }
 
+export function formatUsd(value: number | null, decimals = 2): string {
+  if (value === null) return '$0.00'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value)
+}
+
 export function formatPercent(num: number): string {
   return `${num >= 0 ? '+' : ''}${formatNumber(num)}%`
 }
