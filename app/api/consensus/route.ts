@@ -1,41 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-
 export const dynamic = "force-dynamic";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AI CONSENSUS VOTING API — Multi-provider parallel consensus for BTC direction
+// ANTHROPIC MULTI-PERSONA CONSENSUS ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Provider weights for weighted voting (tuned for crypto short-term prediction)
-const PROVIDER_WEIGHTS: Record<string, number> = {
-  groq: 1.3,
-  "groq-fast": 0.8,
-  gemini: 1.2,
-  mistral: 1.0,
-  openrouter: 0.9,
-  huggingface: 0.7,
-};
-
-// Timeout per provider (ms)
-const PROVIDER_TIMEOUT_MS = 12000;
-
-// Rate limiting: 60 second cooldown
-let lastCallTimestamp = 0;
-let cachedResponse: ConsensusResponse | null = null;
-const COOLDOWN_MS = 60000;
-
-interface ConsensusRequest {
-  price: number;
-  ema9?: number | null;
-  ema21?: number | null;
-  rsi?: number | null;
-  target: string;
-  expiryLabel?: string;
-  secondsToExpiry?: number;
+interface Persona {
+  name: string;
+  label: string;
+  systemPrompt: string;
 }
 
 interface ProviderResult {
   name: string;
+  label: string;
   direction: "ABOVE" | "BELOW" | "unavailable";
   confidence: number;
   reasoning: string;
@@ -53,9 +30,49 @@ interface ConsensusResponse {
   };
   providers: ProviderResult[];
   weightedScore: number;
-  cached?: boolean;
   timestamp: string;
+  engine: string;
 }
+
+interface BTCData {
+  price: number;
+  fearGreed?: { value: number; label: string };
+  pcRatio?: number;
+  closes?: number[];
+}
+
+const PERSONAS: Persona[] = [
+  {
+    name: "technician",
+    label: "Technical Analyst",
+    systemPrompt: `You are a professional BTC technical analyst specializing in momentum indicators. Focus on EMA crossovers, RSI levels, and MACD signal for your ABOVE/BELOW prediction. Weight recent price action heavily.`
+  },
+  {
+    name: "quant",
+    label: "Quant Model",
+    systemPrompt: `You are a quantitative trading model for BTC 15-minute contracts. Focus on statistical patterns, mean reversion probability, and volatility regime. Be data-driven and precise.`
+  },
+  {
+    name: "sentiment",
+    label: "Sentiment Analyst",
+    systemPrompt: `You are a BTC market sentiment specialist. Focus on Fear & Greed index, put/call ratio, and macro momentum. Weight market psychology in your prediction.`
+  },
+  {
+    name: "contrarian",
+    label: "Contrarian",
+    systemPrompt: `You are a contrarian BTC trader. Question the obvious signal. Look for overextended moves, exhaustion patterns, and fakeouts. Challenge the consensus direction.`
+  },
+  {
+    name: "momentum",
+    label: "Momentum Trader",
+    systemPrompt: `You are a pure momentum trader. Follow the trend aggressively. Focus on breakouts, volume surges, and trend continuation. Ignore mean reversion signals.`
+  },
+  {
+    name: "risk",
+    label: "Risk Manager",
+    systemPrompt: `You are a risk-focused BTC analyst. Your job is to identify the lower-risk direction. Consider downside protection, volatility, and probability of loss. Be conservative in uncertain markets.`
+  }
+];
 
 // Simple JSON extraction from response text
 function extractJsonFromText(text: string): Record<string, unknown> | null {
@@ -71,475 +88,179 @@ function extractJsonFromText(text: string): Record<string, unknown> | null {
   }
 }
 
-// Build the system prompt for all providers
-function buildPrompt(data: ConsensusRequest): string {
-  return `You are a BTC 15-minute direction predictor for Kalshi markets.
+async function callPersona(
+  persona: Persona,
+  btcData: BTCData
+): Promise<ProviderResult> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key?.trim()) {
+    return {
+      name: persona.name,
+      label: persona.label,
+      status: "error",
+      errorReason: "ANTHROPIC_API_KEY not configured",
+      direction: "unavailable",
+      confidence: 0,
+      reasoning: ""
+    };
+  }
 
-Current Market Data:
-- BTC Price: $${data.price.toFixed(2)}
-- Target Strike: ${data.target}
-- Time to Expiry: ${data.expiryLabel || "15 minutes"} (${data.secondsToExpiry || 900}s)
-${data.ema9 ? `- EMA 9: ${data.ema9.toFixed(2)}` : ""}
-${data.ema21 ? `- EMA 21: ${data.ema21.toFixed(2)}` : ""}
-${data.rsi ? `- RSI: ${data.rsi.toFixed(2)}` : ""}
+  const userPrompt = `Current BTC market data:
+Price: $${btcData.price}
+Fear & Greed: ${btcData.fearGreed?.value ?? "N/A"} (${btcData.fearGreed?.label ?? "N/A"})
+Put/Call Ratio: ${btcData.pcRatio ?? "N/A"}
+Recent closes (oldest to newest): ${btcData.closes?.slice(-10).join(", ") ?? "N/A"}
 
-Respond ONLY with valid JSON in this exact format:
+Kalshi 15-minute contract: will BTC price be ABOVE or BELOW
+the current price in the next 15 minutes?
+
+Respond ONLY with this exact JSON format, nothing else:
 {
   "direction": "ABOVE" or "BELOW",
-  "confidence": <number 0-100>,
+  "confidence": <number 50-95>,
   "reasoning": "<one sentence max>"
-}
-
-No preamble, no markdown, no explanation outside the JSON.`;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PROVIDER QUERY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-function unavailableProvider(name: string): ProviderResult {
-  return { name, direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
-}
-
-function errorProvider(name: string, errorReason?: string): ProviderResult {
-  return { name, direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason };
-}
-
-function normalizeProviderResult(
-  name: string,
-  parsed: Record<string, unknown> | null
-): ProviderResult {
-  if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-    return errorProvider(name);
-  }
-
-  const direction = String(parsed.direction).toUpperCase();
-  if (direction !== "ABOVE" && direction !== "BELOW") {
-    return errorProvider(name);
-  }
-
-  return {
-    name,
-    direction,
-    confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-    reasoning: String(parsed.reasoning || "").slice(0, 100),
-    status: "ok",
-  };
-}
-
-function parseProviderResponse(text: string, name: string): ProviderResult {
-  return normalizeProviderResult(name, extractJsonFromText(text));
-}
-
-function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && err.name === "AbortError";
-}
-
-function logProviderThrow(providerName: string, err: unknown): string {
-  if (isAbortError(err)) {
-    console.error(`[${providerName}] timed out after ${PROVIDER_TIMEOUT_MS}ms`);
-    return "Request timed out";
-  }
-
-  const message = getErrorMessage(err);
-  console.error(`[${providerName}] threw: ${message}`);
-  return message;
-}
-
-async function queryGroqModel(
-  prompt: string,
-  name: "groq" | "groq-fast",
-  model: string
-): Promise<ProviderResult> {
-  const key = process.env.GROQ_API_KEY;
-  if (!key || key.trim() === "") {
-    console.error(`[consensus] GROQ_API_KEY is undefined or empty for ${name}`);
-    return { ...unavailableProvider(name), errorReason: "API key not configured" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+}`;
 
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key.trim()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 150,
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[consensus] ${name} error ${response.status}: ${errText}`);
-      return errorProvider(name, `${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content ?? "";
-    console.log(`[consensus] ${name} response: ${text}`);
-    return parseProviderResponse(text, name);
-  } catch (err: unknown) {
-    clearTimeout(timeout);
-    return errorProvider(name, logProviderThrow(name, err));
-  }
-}
-
-async function queryGroq(prompt: string): Promise<ProviderResult> {
-  return queryGroqModel(prompt, "groq", "llama-3.3-70b-versatile");
-}
-
-async function queryGroqFast(prompt: string): Promise<ProviderResult> {
-  return queryGroqModel(prompt, "groq-fast", "llama-3.1-8b-instant");
-}
-
-async function queryGemini(prompt: string): Promise<ProviderResult> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key.trim() === "") {
-    console.error("[consensus] GEMINI_API_KEY is undefined or empty");
-    return { ...unavailableProvider("gemini"), errorReason: "API key not configured" };
-  }
-
-  try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`;
-
-    const geminiBody = {
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        maxOutputTokens: 150,
-        temperature: 0.1
+    const res = await fetch(
+      "https://api.anthropic.com/v1/messages",
+      {
+        method: "POST",
+        headers: {
+          "x-api-key": key.trim(),
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 150,
+          system: persona.systemPrompt,
+          messages: [{ role: "user", content: userPrompt }]
+        }),
+        signal: AbortSignal.timeout(15000)
       }
-    };
-
-    const res = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
-      signal: AbortSignal.timeout(12000)
-    });
+    );
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`[consensus] Gemini error ${res.status}: ${errText}`);
-      return errorProvider("gemini", `${res.status} ${res.statusText}`);
+      console.error(`[consensus:${persona.name}] ${res.status}: ${errText}`);
+      return {
+        name: persona.name,
+        label: persona.label,
+        status: "error",
+        errorReason: `${res.status} ${res.statusText}`,
+        direction: "unavailable",
+        confidence: 0,
+        reasoning: ""
+      };
     }
 
-    // Parse response like this:
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    console.log(`[consensus] Gemini response: ${text}`);
-    return parseProviderResponse(text, "gemini");
-  } catch (err: unknown) {
-    return errorProvider("gemini", logProviderThrow("Gemini", err));
+    const text = data.content?.[0]?.text ?? "";
+    console.log(`[consensus:${persona.name}] raw: ${text}`);
+
+    // Parse JSON from response
+    const clean = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    const parsed = JSON.parse(clean);
+    const direction = parsed.direction === "ABOVE" ? "ABOVE" : "BELOW";
+
+    return {
+      name: persona.name,
+      label: persona.label,
+      status: "ok",
+      direction,
+      confidence: Math.min(95, Math.max(50, parsed.confidence ?? 60)),
+      reasoning: parsed.reasoning ?? ""
+    };
+  } catch (err: any) {
+    console.error(`[consensus:${persona.name}] threw: ${err.message}`);
+    return {
+      name: persona.name,
+      label: persona.label,
+      status: "error",
+      errorReason: err.message,
+      direction: "unavailable",
+      confidence: 0,
+      reasoning: ""
+    };
   }
-}
-
-async function queryMistral(prompt: string): Promise<ProviderResult> {
-  const key = process.env.MISTRAL_API_KEY;
-  if (!key || key.trim() === "") {
-    console.error("[consensus] MISTRAL_API_KEY is undefined or empty");
-    return { ...unavailableProvider("mistral"), errorReason: "API key not configured" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-  try {
-    const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key.trim()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "mistral-small-latest",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: 150,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[consensus] Mistral error ${response.status}: ${errText}`);
-      return errorProvider("mistral", `${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content ?? "";
-    console.log(`[consensus] Mistral response: ${text}`);
-    return parseProviderResponse(text, "mistral");
-  } catch (err: unknown) {
-    clearTimeout(timeout);
-    return errorProvider("mistral", logProviderThrow("Mistral", err));
-  }
-}
-
-async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key || key.trim() === "") {
-    console.error("[consensus] OPENROUTER_API_KEY is undefined or empty");
-    return { ...unavailableProvider("openrouter"), errorReason: "API key not configured" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key.trim()}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://btc-trustee-quant-v3.vercel.app",
-        "X-Title": "BTC Trustee Quant V3",
-      },
-      body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct:free",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: 150,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[consensus] OpenRouter error ${response.status}: ${errText}`);
-      return errorProvider("openrouter", `${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content ?? "";
-    console.log(`[consensus] OpenRouter response: ${text}`);
-    return parseProviderResponse(text, "openrouter");
-  } catch (err: unknown) {
-    clearTimeout(timeout);
-    return errorProvider("openrouter", logProviderThrow("OpenRouter", err));
-  }
-}
-
-async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
-  const key = process.env.HUGGINGFACE_API_KEY;
-  if (!key || key.trim() === "") {
-    console.error("[consensus] HUGGINGFACE_API_KEY is undefined or empty");
-    return { ...unavailableProvider("huggingface"), errorReason: "API key not configured" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-  try {
-    const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key.trim()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 150,
-          temperature: 0.1,
-          return_full_text: false,
-        },
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (response.status === 503) {
-      return { ...unavailableProvider("huggingface"), errorReason: "Model loading, retry in 20s" };
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[consensus] HuggingFace error ${response.status}: ${errText}`);
-      return errorProvider("huggingface", `${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const text = Array.isArray(data) ? data[0]?.generated_text ?? "" : data?.generated_text ?? "";
-    console.log(`[consensus] HuggingFace response: ${text}`);
-    return parseProviderResponse(text, "huggingface");
-  } catch (err: unknown) {
-    clearTimeout(timeout);
-    return errorProvider("huggingface", logProviderThrow("HuggingFace", err));
-  }
-}
-
-// Compute weighted consensus from provider results
-function computeConsensus(providers: ProviderResult[]): ConsensusResponse {
-  const available = providers.filter((p) => p.status === "ok");
-  const above = available.filter((p) => p.direction === "ABOVE");
-  const below = available.filter((p) => p.direction === "BELOW");
-  const unavailable = providers.filter((p) => p.status !== "ok");
-
-  const aboveCount = above.length;
-  const belowCount = below.length;
-  const totalAvailable = available.length;
-
-  // Determine consensus
-  let consensus: "ABOVE" | "BELOW" | "SPLIT";
-  if (aboveCount > belowCount) {
-    consensus = "ABOVE";
-  } else if (belowCount > aboveCount) {
-    consensus = "BELOW";
-  } else {
-    consensus = "SPLIT";
-  }
-
-  // Agreement score: (winning votes / total attempted) * 100
-  const winningCount = Math.max(aboveCount, belowCount);
-  const totalAttempted = providers.length;
-  const agreementScore = totalAttempted > 0 ? Math.round((winningCount / totalAttempted) * 100) : 0;
-
-  // Weighted score: average confidence of providers voting for winning direction
-  // Apply weight multiplier: 1x if confidence >= 55, 0.5x if < 55
-  const winningProviders = consensus === "ABOVE" ? above : consensus === "BELOW" ? below : [];
-
-  let totalWeight = 0;
-  let weightedConfidenceSum = 0;
-
-  for (const p of winningProviders) {
-    const baseWeight = PROVIDER_WEIGHTS[p.name] || 1.0;
-    const confidenceWeight = p.confidence >= 55 ? baseWeight : baseWeight * 0.5;
-    totalWeight += confidenceWeight;
-    weightedConfidenceSum += p.confidence * confidenceWeight;
-  }
-
-  const weightedScore = totalWeight > 0 ? Math.round(weightedConfidenceSum / totalWeight) : 0;
-
-  return {
-    consensus,
-    agreementScore,
-    voteCount: {
-      ABOVE: aboveCount,
-      BELOW: belowCount,
-      unavailable: unavailable.length,
-    },
-    providers,
-    weightedScore,
-    timestamp: new Date().toISOString(),
-  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Helper function to fetch BTC price if not provided
-async function getBTCPrice(): Promise<number> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const btcRes = await fetch(`${baseUrl}/api/btc`);
-    if (btcRes.ok) {
-      const btcData = await btcRes.json();
-      return btcData.price;
-    }
-  } catch (error) {
-    console.error('Failed to fetch BTC price:', error);
-  }
-  // Fallback to a reasonable default
-  return 77000;
-}
+export async function GET() {
+  // Fetch live BTC data internally
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://btc-trustee-quant-v3.vercel.app";
+  const btcRes = await fetch(`${baseUrl}/api/btc`);
+  const btcData: BTCData = await btcRes.json();
 
-export async function GET(req: NextRequest) {
-  return POST(req);
-}
+  console.log("[consensus] Starting 6-persona Anthropic consensus");
+  console.log("[consensus] ANTHROPIC_API_KEY present:", !!process.env.ANTHROPIC_API_KEY);
 
-export async function POST(req: NextRequest) {
-  const now = Date.now();
+  // Fire all 6 personas in parallel
+  const results = await Promise.allSettled(
+    PERSONAS.map(p => callPersona(p, btcData))
+  );
 
-  console.log('[consensus] Starting with keys:', {
-    groq: !!process.env.GROQ_API_KEY,
-    gemini: !!process.env.GEMINI_API_KEY,
-    mistral: !!process.env.MISTRAL_API_KEY,
-    openrouter: !!process.env.OPENROUTER_API_KEY,
-    huggingface: !!process.env.HUGGINGFACE_API_KEY,
+  const providers = results.map((r, i) =>
+    r.status === "fulfilled"
+      ? r.value
+      : {
+          name: PERSONAS[i].name,
+          label: PERSONAS[i].label,
+          status: "error",
+          errorReason: "Promise rejected",
+          direction: "unavailable",
+          confidence: 0,
+          reasoning: ""
+        }
+  );
+
+  const active = providers.filter(p => p.status === "ok");
+  const aboveVotes = active.filter(p => p.direction === "ABOVE").length;
+  const belowVotes = active.filter(p => p.direction === "BELOW").length;
+  const total = active.length;
+
+  const consensus = total === 0
+    ? "SPLIT"
+    : aboveVotes > belowVotes
+      ? "ABOVE"
+      : belowVotes > aboveVotes
+        ? "BELOW"
+        : "SPLIT";
+
+  const agreementScore = total === 0 ? 0
+    : Math.round((Math.max(aboveVotes, belowVotes) / PERSONAS.length) * 100);
+
+  const winningProviders = active.filter(
+    p => p.direction === consensus
+  );
+  const weightedScore = winningProviders.length === 0 ? 0
+    : Math.round(
+        winningProviders.reduce((sum, p) => sum + p.confidence, 0)
+        / winningProviders.length
+      );
+
+  return Response.json({
+    consensus,
+    agreementScore,
+    voteCount: {
+      ABOVE: aboveVotes,
+      BELOW: belowVotes,
+      unavailable: providers.length - total
+    },
+    providers,
+    weightedScore,
+    timestamp: new Date().toISOString(),
+    engine: "anthropic-multi-persona"
   });
-
-  // Check cooldown
-  if (now - lastCallTimestamp < COOLDOWN_MS && cachedResponse) {
-    return NextResponse.json({ ...cachedResponse, cached: true });
-  }
-
-  try {
-    let body: any;
-    try {
-      body = await req.json();
-    } catch {
-      // GET request or no body - use empty object
-      body = {};
-    }
-
-    let { price, ema9, ema21, rsi, target, expiryLabel, secondsToExpiry } = body;
-
-    // If no price provided, fetch it from /api/btc
-    if (!price) {
-      price = await getBTCPrice();
-    }
-
-    // Default target if not provided
-    if (!target) {
-      target = "BTC/USD";
-    }
-
-    if (!price) {
-      return NextResponse.json({ error: "Could not determine BTC price" }, { status: 400 });
-    }
-
-    const prompt = buildPrompt({ price, ema9, ema21, rsi, target, expiryLabel, secondsToExpiry });
-
-    // Fire all providers in parallel
-    const providerPromises = [
-      queryGroq(prompt),
-      queryGroqFast(prompt),
-      queryGemini(prompt),
-      queryMistral(prompt),
-      queryOpenRouter(prompt),
-      queryHuggingFace(prompt),
-    ];
-
-    const providerResults = await Promise.allSettled(providerPromises);
-
-    // Collect results
-    const providers: ProviderResult[] = providerResults.map((result) => {
-      if (result.status === "fulfilled") {
-        return result.value;
-      }
-      return { name: "unknown", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    });
-
-    // Debug logging for provider status
-    console.log('[consensus]', providers.map(p => `${p.name}:${p.status}`).join(' '));
-
-    const consensus = computeConsensus(providers);
-
-    // Cache and update timestamp
-    cachedResponse = consensus;
-    lastCallTimestamp = now;
-
-    return NextResponse.json(consensus);
-  } catch (error) {
-    console.error("Consensus API error:", error);
-    return NextResponse.json({ error: "Failed to compute consensus" }, { status: 500 });
-  }
 }
+
+// Support both GET and POST
+export const POST = GET;

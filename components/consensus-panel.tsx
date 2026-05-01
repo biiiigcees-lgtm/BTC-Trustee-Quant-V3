@@ -6,6 +6,7 @@ import { RefreshCw, Users, Activity, AlertCircle } from "lucide-react";
 
 interface ProviderResult {
   name: string;
+  label?: string;
   direction: "ABOVE" | "BELOW" | "unavailable";
   confidence: number;
   reasoning: string;
@@ -270,7 +271,7 @@ export function ConsensusPanel() {
                 >
                   <div className="flex items-center gap-2">
                     <div className="flex flex-col">
-                      <span className="font-medium capitalize">{provider.name}</span>
+                      <span className="font-medium">{provider.label || provider.name}</span>
                       {provider.status === "error" && provider.errorReason && (
                         <span className="text-[10px] text-muted">
                           {provider.errorReason}
