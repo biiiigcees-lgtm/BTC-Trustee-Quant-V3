@@ -17,8 +17,8 @@ const PROVIDER_WEIGHTS: Record<string, number> = {
 };
 
 // Timeout per provider (ms)
-const PROVIDER_TIMEOUT_MS = 12000;
-const HUGGINGFACE_TIMEOUT_MS = 20000;
+const PROVIDER_TIMEOUT_MS = 15000;
+const HUGGINGFACE_TIMEOUT_MS = 25000;
 
 // Rate limiting: 60 second cooldown
 let lastCallTimestamp = 0;
@@ -128,8 +128,8 @@ function normalizeProviderResult(
   };
 }
 
-function isGracefulUnavailableStatus(status: number): boolean {
-  return status === 401 || status === 402 || status === 429;
+function parseProviderResponse(text: string, name: string): ProviderResult {
+  return normalizeProviderResult(name, extractJsonFromText(text));
 }
 
 async function queryGroqModel(
@@ -137,42 +137,42 @@ async function queryGroqModel(
   name: "groq" | "groq-fast",
   model: string
 ): Promise<ProviderResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    return unavailableProvider(name);
+  const key = process.env.GROQ_API_KEY;
+  if (!key || key.trim() === "") {
+    console.error(`[consensus] GROQ_API_KEY is undefined or empty for ${name}`);
+    return { ...unavailableProvider(name), errorReason: "API key not configured" };
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${key.trim()}`,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
         max_tokens: 150,
+        temperature: 0.1,
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
-      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider(name);
+      const errText = await response.text();
+      console.error(`[consensus] ${name} error ${response.status}: ${errText}`);
       return errorProvider(name, `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    return normalizeProviderResult(name, extractJsonFromText(content));
-  } catch {
-    return unavailableProvider(name);
+    const text = data.choices?.[0]?.message?.content ?? "";
+    console.log(`[consensus] ${name} response: ${text}`);
+    return parseProviderResponse(text, name);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[consensus] ${name} threw: ${message}`);
+    return errorProvider(name, message);
   }
 }
 
@@ -185,17 +185,15 @@ async function queryGroqFast(prompt: string): Promise<ProviderResult> {
 }
 
 async function queryGemini(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return unavailableProvider("gemini");
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key.trim() === "") {
+    console.error("[consensus] GEMINI_API_KEY is undefined or empty");
+    return { ...unavailableProvider("gemini"), errorReason: "API key not configured" };
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -206,40 +204,40 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
             temperature: 0.1,
           },
         }),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
       }
     );
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
-      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("gemini");
+      const errText = await response.text();
+      console.error(`[consensus] Gemini error ${response.status}: ${errText}`);
       return errorProvider("gemini", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return normalizeProviderResult("gemini", extractJsonFromText(content));
-  } catch {
-    return unavailableProvider("gemini");
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    console.log(`[consensus] Gemini response: ${text}`);
+    return parseProviderResponse(text, "gemini");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[consensus] Gemini threw: ${message}`);
+    return errorProvider("gemini", message);
   }
 }
 
 async function queryMistral(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) {
-    return unavailableProvider("mistral");
+  const key = process.env.MISTRAL_API_KEY;
+  if (!key || key.trim() === "") {
+    console.error("[consensus] MISTRAL_API_KEY is undefined or empty");
+    return { ...unavailableProvider("mistral"), errorReason: "API key not configured" };
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${key.trim()}`,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: "mistral-small-latest",
@@ -247,39 +245,39 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
         temperature: 0.1,
         max_tokens: 150,
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
-      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("mistral");
+      const errText = await response.text();
+      console.error(`[consensus] Mistral error ${response.status}: ${errText}`);
       return errorProvider("mistral", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    return normalizeProviderResult("mistral", extractJsonFromText(content));
-  } catch {
-    return unavailableProvider("mistral");
+    const text = data.choices?.[0]?.message?.content ?? "";
+    console.log(`[consensus] Mistral response: ${text}`);
+    return parseProviderResponse(text, "mistral");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[consensus] Mistral threw: ${message}`);
+    return errorProvider("mistral", message);
   }
 }
 
 async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return unavailableProvider("openrouter");
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key || key.trim() === "") {
+    console.error("[consensus] OPENROUTER_API_KEY is undefined or empty");
+    return { ...unavailableProvider("openrouter"), errorReason: "API key not configured" };
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${key.trim()}`,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": "https://btc-trustee-quant-v3.vercel.app",
         "X-Title": "BTC Trustee Quant V3",
       },
@@ -289,39 +287,39 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
         temperature: 0.1,
         max_tokens: 150,
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
-      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("openrouter");
+      const errText = await response.text();
+      console.error(`[consensus] OpenRouter error ${response.status}: ${errText}`);
       return errorProvider("openrouter", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    return normalizeProviderResult("openrouter", extractJsonFromText(content));
-  } catch {
-    return unavailableProvider("openrouter");
+    const text = data.choices?.[0]?.message?.content ?? "";
+    console.log(`[consensus] OpenRouter response: ${text}`);
+    return parseProviderResponse(text, "openrouter");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[consensus] OpenRouter threw: ${message}`);
+    return errorProvider("openrouter", message);
   }
 }
 
 async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) {
-    return unavailableProvider("huggingface");
+  const key = process.env.HUGGINGFACE_API_KEY;
+  if (!key || key.trim() === "") {
+    console.error("[consensus] HUGGINGFACE_API_KEY is undefined or empty");
+    return { ...unavailableProvider("huggingface"), errorReason: "API key not configured" };
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), HUGGINGFACE_TIMEOUT_MS);
-
     const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${key.trim()}`,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         inputs: prompt,
@@ -331,23 +329,27 @@ async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
           return_full_text: false,
         },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(HUGGINGFACE_TIMEOUT_MS),
     });
 
-    clearTimeout(timeout);
+    if (response.status === 503) {
+      return { ...unavailableProvider("huggingface"), errorReason: "Model loading, retry in 20s" };
+    }
 
     if (!response.ok) {
-      if (isGracefulUnavailableStatus(response.status) || response.status === 503) {
-        return unavailableProvider("huggingface");
-      }
+      const errText = await response.text();
+      console.error(`[consensus] HuggingFace error ${response.status}: ${errText}`);
       return errorProvider("huggingface", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = Array.isArray(data) ? data[0]?.generated_text || "" : "";
-    return normalizeProviderResult("huggingface", extractJsonFromText(content));
-  } catch {
-    return unavailableProvider("huggingface");
+    const text = Array.isArray(data) ? data[0]?.generated_text ?? "" : data?.generated_text ?? "";
+    console.log(`[consensus] HuggingFace response: ${text}`);
+    return parseProviderResponse(text, "huggingface");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[consensus] HuggingFace threw: ${message}`);
+    return errorProvider("huggingface", message);
   }
 }
 
