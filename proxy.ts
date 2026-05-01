@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
 
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
@@ -18,12 +19,20 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+const protectedRoutesMiddleware = clerkMiddleware(async (auth, req) => {
   // Protect all routes except public ones
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
 });
+
+export default function proxy(req: NextRequest, event: NextFetchEvent) {
+  if (isPublicRoute(req)) {
+    return NextResponse.next();
+  }
+
+  return protectedRoutesMiddleware(req, event);
+}
 
 export const config = {
   matcher: [
