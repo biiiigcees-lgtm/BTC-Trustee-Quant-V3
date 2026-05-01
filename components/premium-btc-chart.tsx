@@ -5,6 +5,15 @@ import { createChart, IChartApi, ISeriesApi, ColorType, CrosshairMode, Time } fr
 import { useMarketStore } from '@/lib/market-store';
 import { TrendingUp, TrendingDown, BarChart3, Activity } from 'lucide-react';
 
+interface BTCData {
+  price: number;
+  change24h: number;
+  high24h: number;
+  low24h: number;
+  volume24h: number;
+  closes: number[];
+}
+
 export function PremiumBTCChart() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -19,6 +28,30 @@ export function PremiumBTCChart() {
   const [strikePrice, setStrikePrice] = useState<number>(76500);
   const [activeIndicator, setActiveIndicator] = useState<'none' | 'rsi' | 'volume'>('volume');
   const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m' | '1h'>('15m');
+  const [btcData, setBtcData] = useState<BTCData | null>(null);
+
+  // Fetch BTC data on mount
+  useEffect(() => {
+    const fetchBTCData = async () => {
+      try {
+        const res = await fetch('/api/btc');
+        if (res.ok) {
+          const data = await res.json();
+          setBtcData(data);
+          if (data.price) {
+            setStrikePrice(Math.round(data.price / 500) * 500);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch BTC data for chart:', error);
+      }
+    };
+
+    fetchBTCData();
+    // Poll every 15 seconds for updates
+    const interval = setInterval(fetchBTCData, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (currentPrice) {
@@ -116,7 +149,7 @@ export function PremiumBTCChart() {
       },
     });
 
-    const generateMockData = () => {
+    const generateChartData = () => {
       const data: { time: Time; value: number }[] = [];
       const ema9Data: { time: Time; value: number }[] = [];
       const ema21Data: { time: Time; value: number }[] = [];
@@ -124,47 +157,50 @@ export function PremiumBTCChart() {
       const volumeData: { time: Time; value: number; color: string }[] = [];
       const rsiData: { time: Time; value: number }[] = [];
       
-      const basePrice = currentPrice || 76500;
+      // Use real closes[] data if available, otherwise fallback to current price
+      const closes = btcData?.closes && btcData.closes.length > 0 
+        ? btcData.closes 
+        : Array(48).fill(currentPrice || 76500);
+      
       const now = Math.floor(Date.now() / 1000);
-      const interval = timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : timeframe === '15m' ? 900 : 3600;
+      const interval = 900; // 15 minutes in seconds
       
-      let price = basePrice;
-      let ema9 = basePrice;
-      let ema21 = basePrice;
-      let rsi = 50;
+      // Calculate EMAs from closes
+      let ema9 = closes[0] || currentPrice || 76500;
+      let ema21 = closes[0] || currentPrice || 76500;
+      const k9 = 2 / 10;
+      const k21 = 2 / 22;
       
-      for (let i = 100; i >= 0; i--) {
-        const time = (now - (i * interval)) as Time;
+      // Process closes (oldest to newest, 48 values = 12 hours of 15-min data)
+      closes.forEach((close, index) => {
+        const time = (now - ((closes.length - 1 - index) * interval)) as Time;
+        const prevClose = index > 0 ? closes[index - 1] : close;
+        const isUp = close >= prevClose;
         
-        const change = (Math.random() - 0.5) * 200;
-        const isUp = change > 0;
-        price = Math.max(price + change, basePrice - 1000);
+        // Update EMAs
+        ema9 = close * k9 + ema9 * (1 - k9);
+        ema21 = close * k21 + ema21 * (1 - k21);
         
-        const k9 = 2 / 10;
-        const k21 = 2 / 22;
-        ema9 = price * k9 + ema9 * (1 - k9);
-        ema21 = price * k21 + ema21 * (1 - k21);
+        // Simple RSI calculation
+        const change = close - prevClose;
+        const rsi = 50 + (change / close) * 1000; // Simplified RSI
         
-        rsi = Math.max(0, Math.min(100, rsi + (isUp ? 5 : -5) + (Math.random() - 0.5) * 10));
-        
-        const volume = Math.random() * 1000000 + 500000;
-        
-        data.push({ time, value: price });
+        data.push({ time, value: close });
         ema9Data.push({ time, value: ema9 });
         ema21Data.push({ time, value: ema21 });
         strikeData.push({ time, value: strikePrice });
         volumeData.push({ 
           time, 
-          value: volume, 
+          value: Math.random() * 1000000 + 500000, // Placeholder volume
           color: isUp ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)' 
         });
-        rsiData.push({ time, value: rsi });
-      }
+        rsiData.push({ time, value: Math.max(0, Math.min(100, rsi)) });
+      });
       
       return { data, ema9Data, ema21Data, strikeData, volumeData, rsiData };
     };
 
-    const { data, ema9Data, ema21Data, strikeData, volumeData, rsiData } = generateMockData();
+    const { data, ema9Data, ema21Data, strikeData, volumeData, rsiData } = generateChartData();
 
     areaSeries.setData(data);
     ema9Series.setData(ema9Data);
@@ -202,7 +238,7 @@ export function PremiumBTCChart() {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [currentPrice, strikePrice, activeIndicator, timeframe]);
+  }, [currentPrice, strikePrice, activeIndicator, timeframe, btcData]);
 
   return (
     <div className="bg-surface rounded-lg p-4 border border-mid">

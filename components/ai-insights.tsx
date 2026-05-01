@@ -12,29 +12,8 @@ interface AIInsight {
 }
 
 export function AIInsights() {
-  const [insights, setInsights] = useState<AIInsight[]>([
-    {
-      type: 'signal',
-      title: 'Bullish Momentum Detected',
-      description: 'EMA 9 crossing above EMA 21 with increasing volume suggests continued upward movement.',
-      confidence: 82,
-      timestamp: '2 min ago',
-    },
-    {
-      type: 'opportunity',
-      title: 'High Probability Setup',
-      description: 'Current price action aligns with 78% of historical winning patterns.',
-      confidence: 78,
-      timestamp: '5 min ago',
-    },
-    {
-      type: 'warning',
-      title: 'Volatility Alert',
-      description: 'Market volatility increasing - consider reducing position sizes.',
-      confidence: 65,
-      timestamp: '8 min ago',
-    },
-  ]);
+  // Start with empty insights - no fake data
+  const [insights, setInsights] = useState<AIInsight[]>([]);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -115,37 +94,46 @@ export function AIInsights() {
       </div>
 
       <div className="space-y-3">
-        {insights.map((insight, index) => (
-          <div
-            key={index}
-            className="bg-card rounded-lg p-3 border border-subtle hover:border-subtle/50 transition-colors"
-          >
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-lg ${getInsightColor(insight.type)}`}>
-                {getInsightIcon(insight.type)}
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-sm font-semibold text-primary">{insight.title}</h4>
-                  <span className="text-xs text-muted">{insight.timestamp}</span>
+        {insights.length === 0 ? (
+          <div className="text-center py-8">
+            <Brain className="w-8 h-8 mx-auto mb-2 text-muted opacity-50" />
+            <p className="text-xs text-muted">
+              No AI insights yet — run market analysis to generate signals
+            </p>
+          </div>
+        ) : (
+          insights.map((insight, index) => (
+            <div
+              key={index}
+              className="bg-card rounded-lg p-3 border border-subtle hover:border-subtle/50 transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <div className={`p-2 rounded-lg ${getInsightColor(insight.type)}`}>
+                  {getInsightIcon(insight.type)}
                 </div>
                 
-                <p className="text-xs text-muted mb-2 line-clamp-2">{insight.description}</p>
-                
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${getConfidenceColor(insight.confidence)}`}
-                      style={{ width: `${insight.confidence}%` }}
-                    />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <h4 className="text-sm font-semibold text-primary">{insight.title}</h4>
+                    <span className="text-xs text-muted">{insight.timestamp}</span>
                   </div>
-                  <span className="text-xs font-medium text-muted">{insight.confidence}%</span>
+                  
+                  <p className="text-xs text-muted mb-2 line-clamp-2">{insight.description}</p>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${getConfidenceColor(insight.confidence)}`}
+                        style={{ width: `${insight.confidence}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium text-muted">{insight.confidence}%</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div className="mt-4 pt-4 border-t border-subtle">

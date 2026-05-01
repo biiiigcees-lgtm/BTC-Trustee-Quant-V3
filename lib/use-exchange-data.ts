@@ -161,12 +161,12 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
 
     kalshiWS.connect();
 
-    // Start REST fallback polling (every 5 seconds if WS not connected)
+    // Start REST fallback polling (every 15 seconds if WS not connected)
     restFallbackInterval.current = setInterval(() => {
       if (!wsConnectedRef.current && mounted) {
         fetchRestFallback();
       }
-    }, 5000);
+    }, 15000);
 
     // Auto-reconnect every 30 seconds if disconnected
     const autoReconnectInterval = setInterval(() => {
@@ -175,18 +175,13 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
       }
     }, 30000);
 
-    // Initial REST fetch if no WS data after 3 seconds
-    const initialFallbackTimeout = setTimeout(() => {
-      if (!wsConnectedRef.current && mounted && !data.aggregatedPrice) {
-        fetchRestFallback();
-      }
-    }, 3000);
+    // Immediate initial REST fetch on mount
+    fetchRestFallback();
 
     return () => {
       mounted = false;
       if (restFallbackInterval.current) clearInterval(restFallbackInterval.current);
       clearInterval(autoReconnectInterval);
-      clearTimeout(initialFallbackTimeout);
       priceAggregator.disconnectExchange('binance', 'BTCUSDT');
       priceAggregator.disconnectExchange('kraken', symbol);
       kalshiWS.disconnect();
