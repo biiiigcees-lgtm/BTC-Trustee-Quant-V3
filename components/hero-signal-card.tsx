@@ -109,62 +109,62 @@ export function HeroSignalCard() {
   const isUrgent = signalData.timeLeft < 60;
 
   return (
-    <div className="glass-card rounded-xl p-6 border border-subtle">
+    <div className="bg-surface rounded-lg p-6">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Target className="w-5 h-5 text-accent-cyan" />
-          <span className="text-sm font-semibold text-primary uppercase tracking-wider">
-            {signalData.contract}
-          </span>
+        <div className="flex items-center gap-3">
+          <div className={`w-12 h-12 rounded-lg flex items-center justify-center border-l-4 ${
+            signalData.signal === 'BUY_YES' 
+              ? 'bg-elevated border-bullish-bright' 
+              : signalData.signal === 'BUY_NO' 
+              ? 'bg-elevated border-bearish-bright' 
+              : 'bg-elevated border-neutral-bright'
+          }`}>
+            {signalData.signal === 'BUY_YES' && <TrendingUp className="w-6 h-6 text-bullish-bright" />}
+            {signalData.signal === 'BUY_NO' && <TrendingDown className="w-6 h-6 text-bearish-bright" />}
+            {signalData.signal === 'PASS' && <Minus className="w-6 h-6 text-neutral-bright" />}
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-muted uppercase tracking-wider">
+              {signalData.contract}
+            </div>
+            <div className="text-sm text-muted">
+              Strike: ${signalData.strikePrice.toLocaleString()}
+            </div>
+          </div>
         </div>
-        <div
-          className={`flex items-center gap-2 px-3 py-1 rounded-lg ${
-            isUrgent ? 'bg-bearish-dim' : 'bg-card'
-          } border border-subtle`}
-        >
-          <Clock className={`w-4 h-4 ${isUrgent ? 'text-bearish animate-pulse' : 'text-muted'}`} />
-          <span className={`text-sm font-mono font-semibold ${isUrgent ? 'text-bearish' : 'text-primary'}`}>
-            {formatTimeLeft(signalData.timeLeft)}
-          </span>
+        <div className={`px-4 py-2 rounded font-bold text-lg ${
+          signalData.signal === 'BUY_YES' 
+            ? 'bg-bullish text-primary' 
+            : signalData.signal === 'BUY_NO' 
+            ? 'bg-bearish text-primary' 
+            : 'bg-neutral text-primary'
+        }`}>
+          {signalData.signal.replace('_', ' ')}
         </div>
       </div>
 
       <div className="mb-6">
-        <div className="flex items-center gap-4 mb-4">
-          <div className={`flex items-center gap-3 ${getSignalColor(signalData.signal)}`}>
-            {getSignalIcon(signalData.signal)}
-            <span className="text-4xl font-bold tracking-tight">
-              {signalData.signal.replace('_', ' ')}
-            </span>
-          </div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-muted">Confidence</span>
+          <span className={`text-2xl font-bold ${
+            signalData.confidence >= 70 ? 'text-bullish-bright' : 
+            signalData.confidence >= 50 ? 'text-neutral-bright' : 'text-bearish-bright'
+          }`}>
+            {signalData.confidence}%
+          </span>
         </div>
-
-        <div className="text-2xl font-semibold text-primary mb-2">
-          Strike: {formatPrice(signalData.strikePrice)}
+        <div className="h-3 bg-elevated rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              signalData.confidence >= 70 ? 'bg-bullish-bright' : 
+              signalData.confidence >= 50 ? 'bg-neutral-bright' : 'bg-bearish-bright'
+            }`}
+            style={{ width: `${signalData.confidence}%` }}
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-card rounded-lg p-4 border border-subtle">
-          <div className="text-xs text-muted uppercase tracking-wider mb-1">
-            Confidence
-          </div>
-          <div className="flex items-baseline gap-1 mb-2">
-            <span className="text-2xl font-bold text-primary">
-              {signalData.confidence}%
-            </span>
-            <span className="text-sm font-semibold text-muted">
-              ({getConfidenceGrade(signalData.confidence)})
-            </span>
-          </div>
-          <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${getConfidenceColor(signalData.confidence)}`}
-              style={{ width: `${signalData.confidence}%` }}
-            />
-          </div>
-        </div>
-
         <div className="bg-card rounded-lg p-4 border border-subtle">
           <div className="text-xs text-muted uppercase tracking-wider mb-1">
             Risk Grade

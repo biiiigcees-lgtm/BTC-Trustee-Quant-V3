@@ -32,6 +32,8 @@ export function ConsensusPanel() {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+  const COOLDOWN_SECONDS = 60;
 
   const fetchConsensus = useCallback(async () => {
     if (!currentPrice) return;
@@ -58,6 +60,7 @@ export function ConsensusPanel() {
       const result = await response.json();
       setData(result);
       setLastUpdated(new Date());
+      setCooldownRemaining(COOLDOWN_SECONDS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -80,6 +83,16 @@ export function ConsensusPanel() {
 
     return () => clearInterval(interval);
   }, [fetchConsensus]);
+
+  // Cooldown timer effect
+  useEffect(() => {
+    if (cooldownRemaining > 0) {
+      const timer = setInterval(() => {
+        setCooldownRemaining((prev) => Math.max(0, prev - 1));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [cooldownRemaining]);
 
   const getConsensusColor = (consensus: string) => {
     switch (consensus) {
@@ -117,6 +130,9 @@ export function ConsensusPanel() {
 
   const formatTime = (date: Date | null) => {
     if (!date) return "—";
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   };
 
@@ -125,7 +141,7 @@ export function ConsensusPanel() {
   const winningVotes = data?.consensus === "ABOVE" ? data.voteCount.ABOVE : data?.voteCount.BELOW || 0;
 
   return (
-    <div className="glass-card rounded-xl p-4 border border-subtle">
+    <div className="bg-surface rounded-lg p-4 border border-mid">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
@@ -180,6 +196,18 @@ export function ConsensusPanel() {
               <div key={i} className="h-10 bg-card rounded animate-pulse" />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && !data && !error && (
+        <div className="text-center py-8">
+          <div className="text-muted mb-2">
+            <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          </div>
+          <p className="text-sm text-muted">
+            Press Refresh to run consensus
+          </p>
         </div>
       )}
 
@@ -265,11 +293,26 @@ export function ConsensusPanel() {
 
           {/* Footer */}
           <div className="mt-4 pt-4 border-t border-subtle">
-            <div className="flex items-center justify-between text-xs text-muted">
-              <span>Last updated: {formatTime(lastUpdated)}</span>
-              <span>
-                {availableProviders.length}/{totalProviders} active
-              </span>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted">
+                <span>Last updated: {formatTime(lastUpdated)}</span>
+                {cooldownRemaining > 0 && (
+                  <span className="ml-2 text-neutral">
+                    · {cooldownRemaining}s cooldown
+                  </span>
+                )}
+                <span className="ml-2">
+                  {availableProviders.length}/{totalProviders} active
+                </span>
+              </div>
+              <button
+                onClick={fetchConsensus}
+                disabled={loading || cooldownRemaining > 0}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-card border border-subtle hover:border-subtle/50 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
             </div>
           </div>
         </>

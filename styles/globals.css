@@ -4,35 +4,35 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Premium Trading Terminal Color System */
-  --bg-primary: #0B0F19;
-  --bg-panel: #111827;
-  --bg-card: #1A1F2E;
-  --bg-elevated: #1E2433;
+  /* Matte Dark Color Palette */
+  --bg-base: #0D0D0D;
+  --bg-surface: #141414;
+  --bg-elevated: #1A1A1A;
+  --bg-overlay: #202020;
   
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  --border-focus: rgba(34, 197, 94, 0.5);
+  --border-dim: #2A2A2A;
+  --border-mid: #333333;
+  --border-focus: #444444;
   
   /* Trading Colors */
-  --bullish: #22C55E;
-  --bullish-dim: rgba(34, 197, 94, 0.2);
-  --bearish: #EF4444;
-  --bearish-dim: rgba(239, 68, 68, 0.2);
-  --neutral: #F59E0B;
-  --neutral-dim: rgba(245, 158, 11, 0.2);
-  
-  /* Text Colors */
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-  --text-dim: #475569;
+  --bullish: #2D6A4F;
+  --bullish-bright: #52B788;
+  --bearish: #7B2D2D;
+  --bearish-bright: #E07070;
+  --neutral: #5C4A1E;
+  --neutral-bright: #D4A843;
   
   /* Accent Colors */
-  --accent-cyan: #06B6D4;
-  --accent-purple: #8B5CF6;
-  --accent-blue: #3B82F6;
+  --accent-cyan: #1A4A5A;
+  --accent-cyan-bright: #4FC3D7;
+  --accent-purple: #3A2A5A;
+  --accent-purple-bright: #9B7FD4;
+  
+  /* Text Colors */
+  --text-primary: #E8E8E8;
+  --text-secondary: #999999;
+  --text-muted: #555555;
   
   /* Spacing Scale (8px) */
   --space-1: 8px;
@@ -49,27 +49,40 @@
   --font-meta: 13px;
   --font-body: 14px;
   
-  /* Existing Tailwind variables (for compatibility) */
-  --background: var(--bg-primary);
+  /* Tailwind variables (for compatibility) */
+  --background: var(--bg-base);
   --foreground: var(--text-primary);
-  --card: var(--bg-panel);
+  --card: var(--bg-surface);
   --card-foreground: var(--text-primary);
-  --popover: var(--bg-card);
+  --popover: var(--bg-elevated);
   --popover-foreground: var(--text-primary);
   --primary: var(--text-primary);
-  --primary-foreground: var(--bg-primary);
+  --primary-foreground: var(--bg-base);
   --secondary: var(--bg-elevated);
   --secondary-foreground: var(--text-primary);
-  --muted: var(--bg-card);
+  --muted: var(--bg-elevated);
   --muted-foreground: var(--text-secondary);
-  --accent: var(--accent-cyan);
+  --accent: var(--accent-cyan-bright);
   --accent-foreground: var(--text-primary);
-  --destructive: var(--bearish);
+  --destructive: var(--bearish-bright);
   --destructive-foreground: var(--text-primary);
-  --border: var(--border-subtle);
-  --input: var(--border-subtle);
-  --ring: var(--accent-cyan);
+  --border: var(--border-mid);
+  --input: var(--border-mid);
+  --ring: var(--accent-cyan-bright);
   --radius: 0.5rem;
+  
+  /* Legacy aliases for components */
+  --bg-primary: var(--bg-base);
+  --bg-panel: var(--bg-surface);
+  --bg-card: var(--bg-elevated);
+  --border-subtle: var(--border-dim);
+  --border-strong: var(--border-mid);
+  --border-focus: var(--border-focus);
+  --bullish-dim: rgba(45, 106, 79, 0.3);
+  --bearish-dim: rgba(123, 45, 45, 0.3);
+  --neutral-dim: rgba(92, 74, 30, 0.3);
+  --text-dim: var(--text-muted);
+  --accent-blue: var(--accent-cyan);
 }
 
 .dark {

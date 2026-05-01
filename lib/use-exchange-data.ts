@@ -12,6 +12,7 @@ export interface ExchangeData {
   isConnected: boolean;
   kalshiMarkets: Map<string, KalshiMarketUpdate>;
   kalshiConnected: boolean;
+  reconnect?: () => void;
 }
 
 export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: string[] = ['KXBTC15M']) {
@@ -28,6 +29,7 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
   const restFallbackInterval = useRef<NodeJS.Timeout | null>(null);
   const wsConnectedRef = useRef(false);
   const mountedRef = useRef(true);
+  const reconnectRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +101,32 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
       });
     };
 
+    // Reconnect function
+    const reconnect = () => {
+      if (!mounted) return;
+      wsConnectedRef.current = false;
+      priceAggregator.disconnectExchange('binance', 'BTCUSDT');
+      priceAggregator.disconnectExchange('kraken', symbol);
+      kalshiWS.disconnect();
+
+      // Reconnect after short delay
+      setTimeout(() => {
+        if (!mounted) return;
+        priceAggregator.connectExchange('binance', 'BTCUSDT', {
+          onPriceUpdate: handleBinanceUpdate,
+          onError: (error) => console.error('Binance error:', error),
+        });
+        priceAggregator.connectExchange('kraken', symbol, {
+          onPriceUpdate: handleKrakenUpdate,
+          onError: (error) => console.error('Kraken error:', error),
+        });
+        priceAggregator.subscribe(symbol, handleAggregatedUpdate);
+        kalshiWS.connect();
+      }, 1000);
+    };
+
+    reconnectRef.current = reconnect;
+
     // Connect to Binance and Kraken
     priceAggregator.connectExchange('binance', 'BTCUSDT', {
       onPriceUpdate: handleBinanceUpdate,
@@ -140,6 +168,13 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
       }
     }, 5000);
 
+    // Auto-reconnect every 30 seconds if disconnected
+    const autoReconnectInterval = setInterval(() => {
+      if (!wsConnectedRef.current && mounted) {
+        reconnect();
+      }
+    }, 30000);
+
     // Initial REST fetch if no WS data after 3 seconds
     const initialFallbackTimeout = setTimeout(() => {
       if (!wsConnectedRef.current && mounted && !data.aggregatedPrice) {
@@ -150,6 +185,7 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
     return () => {
       mounted = false;
       if (restFallbackInterval.current) clearInterval(restFallbackInterval.current);
+      clearInterval(autoReconnectInterval);
       clearTimeout(initialFallbackTimeout);
       priceAggregator.disconnectExchange('binance', 'BTCUSDT');
       priceAggregator.disconnectExchange('kraken', symbol);
@@ -157,5 +193,5 @@ export function useExchangeData(symbol: string = 'BTC/USD', kalshiMarkets: strin
     };
   }, [symbol, kalshiMarkets]);
 
-  return data;
+  return { ...data, reconnect: reconnectRef.current };
 }

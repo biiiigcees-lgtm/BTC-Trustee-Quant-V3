@@ -76,7 +76,7 @@ export function QuickIntelPanel() {
   };
 
   return (
-    <div className="glass-card rounded-xl p-4 border border-subtle">
+    <div className="bg-surface rounded-lg p-4 border border-mid">
       <div className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">
         Quick Intel
       </div>

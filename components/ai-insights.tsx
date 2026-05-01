@@ -83,7 +83,7 @@ export function AIInsights() {
   };
 
   return (
-    <div className="glass-card rounded-xl p-4 border border-subtle">
+    <div className="bg-surface rounded-lg p-4 border border-mid">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Brain className="w-4 h-4 text-accent-purple" />

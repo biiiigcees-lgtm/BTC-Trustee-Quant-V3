@@ -13,22 +13,58 @@ interface SignalRecord {
 
 export function HistoricalPerformance() {
   const [stats, setStats] = useState({
-    winRate: 68,
-    avgEdge: 4.1,
-    bestStreak: 7,
-    todayPnL: 2450,
+    winRate: 0,
+    avgEdge: 0,
+    bestStreak: 0,
+    todayPnL: 0,
   });
 
-  const [recentSignals, setRecentSignals] = useState<SignalRecord[]>([
-    { time: '14:35', signal: 'BUY_YES', strike: 76500, result: 'WIN', edge: 6.2 },
-    { time: '14:20', signal: 'BUY_NO', strike: 77000, result: 'WIN', edge: 4.8 },
-    { time: '14:05', signal: 'BUY_YES', strike: 76250, result: 'LOSS', edge: 3.1 },
-    { time: '13:50', signal: 'BUY_YES', strike: 76000, result: 'WIN', edge: 5.5 },
-    { time: '13:35', signal: 'PASS', strike: 75750, result: 'PENDING', edge: 0 },
-    { time: '13:20', signal: 'BUY_NO', strike: 75500, result: 'WIN', edge: 4.2 },
-    { time: '13:05', signal: 'BUY_YES', strike: 75250, result: 'WIN', edge: 7.1 },
-    { time: '12:50', signal: 'BUY_YES', strike: 75000, result: 'LOSS', edge: 2.8 },
-  ]);
+  const [recentSignals, setRecentSignals] = useState<SignalRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data from /api/bets
+  useEffect(() => {
+    const fetchBets = async () => {
+      try {
+        const res = await fetch('/api/bets');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            // Transform API data to SignalRecord format
+            const signals: SignalRecord[] = data.map((bet: any) => ({
+              time: new Date(bet.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              signal: bet.signal || 'PASS',
+              strike: bet.strike_price || 0,
+              result: bet.result || 'PENDING',
+              edge: bet.edge || 0,
+            }));
+
+            setRecentSignals(signals);
+
+            // Calculate stats from real data
+            const wins = signals.filter(s => s.result === 'WIN').length;
+            const total = signals.length;
+            const winRate = total > 0 ? (wins / total) * 100 : 0;
+            const avgEdge = total > 0 ? signals.reduce((sum, s) => sum + s.edge, 0) / total : 0;
+            const todayPnL = signals.reduce((sum, s) => sum + (s.result === 'WIN' ? 100 : s.result === 'LOSS' ? -100 : 0), 0);
+
+            setStats({
+              winRate,
+              avgEdge,
+              bestStreak: 0, // Would need streak calculation
+              todayPnL,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch bets:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBets();
+  }, []);
 
   const [animatedStats, setAnimatedStats] = useState({
     winRate: 0,
@@ -38,6 +74,8 @@ export function HistoricalPerformance() {
   });
 
   useEffect(() => {
+    if (loading) return;
+    
     const duration = 1000;
     const steps = 60;
     const interval = duration / steps;
@@ -61,7 +99,7 @@ export function HistoricalPerformance() {
     };
 
     requestAnimationFrame(animate);
-  }, [stats]);
+  }, [stats, loading]);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -115,7 +153,7 @@ export function HistoricalPerformance() {
   };
 
   return (
-    <div className="glass-card rounded-xl p-4 border border-subtle">
+    <div className="bg-surface rounded-lg p-4 border border-mid">
       <div className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">
         Historical Performance
       </div>
@@ -175,28 +213,36 @@ export function HistoricalPerformance() {
           <span className="text-right">Edge</span>
         </div>
 
-        <div className="divide-y divide-subtle">
-          {recentSignals.map((record, index) => (
-            <div
-              key={index}
-              className="grid grid-cols-5 gap-2 px-3 py-2 text-sm hover:bg-card/50 transition-colors animate-in fade-in slide-in-from-left-2"
-              style={{ animationDelay: `${index * 50}ms` }}
-            >
-              <span className="text-muted">{record.time}</span>
-              <span className={`font-medium ${getSignalColor(record.signal)}`}>
-                {record.signal.replace('_', ' ')}
-              </span>
-              <span className="text-primary">{formatPrice(record.strike)}</span>
-              <span className={`font-medium px-2 py-0.5 rounded text-xs ${getResultColor(record.result)} ${getResultBg(record.result)}`}>
-                {record.result}
-              </span>
-              <span className={`text-right font-medium ${record.edge > 0 ? 'text-bullish' : 'text-bearish'}`}>
-                {record.edge > 0 ? '+' : ''}
-                {record.edge}%
-              </span>
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <div className="p-8 text-center text-muted">Loading...</div>
+        ) : recentSignals.length === 0 ? (
+          <div className="p-8 text-center text-muted">
+            No trades logged yet
+          </div>
+        ) : (
+          <div className="divide-y divide-subtle">
+            {recentSignals.map((record, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-5 gap-2 px-3 py-2 text-sm hover:bg-card/50 transition-colors animate-in fade-in slide-in-from-left-2"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <span className="text-muted">{record.time}</span>
+                <span className={`font-medium ${getSignalColor(record.signal)}`}>
+                  {record.signal.replace('_', ' ')}
+                </span>
+                <span className="text-primary">{formatPrice(record.strike)}</span>
+                <span className={`font-medium px-2 py-0.5 rounded text-xs ${getResultColor(record.result)} ${getResultBg(record.result)}`}>
+                  {record.result}
+                </span>
+                <span className={`text-right font-medium ${record.edge > 0 ? 'text-bullish' : 'text-bearish'}`}>
+                  {record.edge > 0 ? '+' : ''}
+                  {record.edge}%
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

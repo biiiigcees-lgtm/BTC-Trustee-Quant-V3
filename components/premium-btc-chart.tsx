@@ -205,7 +205,7 @@ export function PremiumBTCChart() {
   }, [currentPrice, strikePrice, activeIndicator, timeframe]);
 
   return (
-    <div className="glass-card rounded-xl p-4 border border-subtle">
+    <div className="bg-surface rounded-lg p-4 border border-mid">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <div className="text-xs font-semibold text-muted uppercase tracking-wider">
