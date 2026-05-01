@@ -17,8 +17,7 @@ const PROVIDER_WEIGHTS: Record<string, number> = {
 };
 
 // Timeout per provider (ms)
-const PROVIDER_TIMEOUT_MS = 15000;
-const HUGGINGFACE_TIMEOUT_MS = 25000;
+const PROVIDER_TIMEOUT_MS = 12000;
 
 // Rate limiting: 60 second cooldown
 let lastCallTimestamp = 0;
@@ -132,6 +131,25 @@ function parseProviderResponse(text: string, name: string): ProviderResult {
   return normalizeProviderResult(name, extractJsonFromText(text));
 }
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+function logProviderThrow(providerName: string, err: unknown): string {
+  if (isAbortError(err)) {
+    console.error(`[${providerName}] timed out after ${PROVIDER_TIMEOUT_MS}ms`);
+    return "Request timed out";
+  }
+
+  const message = getErrorMessage(err);
+  console.error(`[${providerName}] threw: ${message}`);
+  return message;
+}
+
 async function queryGroqModel(
   prompt: string,
   name: "groq" | "groq-fast",
@@ -142,6 +160,9 @@ async function queryGroqModel(
     console.error(`[consensus] GROQ_API_KEY is undefined or empty for ${name}`);
     return { ...unavailableProvider(name), errorReason: "API key not configured" };
   }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
   try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -156,8 +177,9 @@ async function queryGroqModel(
         max_tokens: 150,
         temperature: 0.1,
       }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -170,9 +192,8 @@ async function queryGroqModel(
     console.log(`[consensus] ${name} response: ${text}`);
     return parseProviderResponse(text, name);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[consensus] ${name} threw: ${message}`);
-    return errorProvider(name, message);
+    clearTimeout(timeout);
+    return errorProvider(name, logProviderThrow(name, err));
   }
 }
 
@@ -191,6 +212,9 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     return { ...unavailableProvider("gemini"), errorReason: "API key not configured" };
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`,
@@ -204,9 +228,10 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
             temperature: 0.1,
           },
         }),
-        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+        signal: controller.signal,
       }
     );
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -219,9 +244,8 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     console.log(`[consensus] Gemini response: ${text}`);
     return parseProviderResponse(text, "gemini");
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[consensus] Gemini threw: ${message}`);
-    return errorProvider("gemini", message);
+    clearTimeout(timeout);
+    return errorProvider("gemini", logProviderThrow("Gemini", err));
   }
 }
 
@@ -231,6 +255,9 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
     console.error("[consensus] MISTRAL_API_KEY is undefined or empty");
     return { ...unavailableProvider("mistral"), errorReason: "API key not configured" };
   }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
   try {
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
@@ -245,8 +272,9 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
         temperature: 0.1,
         max_tokens: 150,
       }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -259,9 +287,8 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
     console.log(`[consensus] Mistral response: ${text}`);
     return parseProviderResponse(text, "mistral");
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[consensus] Mistral threw: ${message}`);
-    return errorProvider("mistral", message);
+    clearTimeout(timeout);
+    return errorProvider("mistral", logProviderThrow("Mistral", err));
   }
 }
 
@@ -271,6 +298,9 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
     console.error("[consensus] OPENROUTER_API_KEY is undefined or empty");
     return { ...unavailableProvider("openrouter"), errorReason: "API key not configured" };
   }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -287,8 +317,9 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
         temperature: 0.1,
         max_tokens: 150,
       }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -301,9 +332,8 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
     console.log(`[consensus] OpenRouter response: ${text}`);
     return parseProviderResponse(text, "openrouter");
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[consensus] OpenRouter threw: ${message}`);
-    return errorProvider("openrouter", message);
+    clearTimeout(timeout);
+    return errorProvider("openrouter", logProviderThrow("OpenRouter", err));
   }
 }
 
@@ -313,6 +343,9 @@ async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
     console.error("[consensus] HUGGINGFACE_API_KEY is undefined or empty");
     return { ...unavailableProvider("huggingface"), errorReason: "API key not configured" };
   }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
   try {
     const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3", {
@@ -329,8 +362,9 @@ async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
           return_full_text: false,
         },
       }),
-      signal: AbortSignal.timeout(HUGGINGFACE_TIMEOUT_MS),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (response.status === 503) {
       return { ...unavailableProvider("huggingface"), errorReason: "Model loading, retry in 20s" };
@@ -347,9 +381,8 @@ async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
     console.log(`[consensus] HuggingFace response: ${text}`);
     return parseProviderResponse(text, "huggingface");
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[consensus] HuggingFace threw: ${message}`);
-    return errorProvider("huggingface", message);
+    clearTimeout(timeout);
+    return errorProvider("huggingface", logProviderThrow("HuggingFace", err));
   }
 }
 
@@ -435,6 +468,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const now = Date.now();
+
+  console.log('[consensus] Starting with keys:', {
+    groq: !!process.env.GROQ_API_KEY,
+    gemini: !!process.env.GEMINI_API_KEY,
+    mistral: !!process.env.MISTRAL_API_KEY,
+    openrouter: !!process.env.OPENROUTER_API_KEY,
+    huggingface: !!process.env.HUGGINGFACE_API_KEY,
+  });
 
   // Check cooldown
   if (now - lastCallTimestamp < COOLDOWN_MS && cachedResponse) {
