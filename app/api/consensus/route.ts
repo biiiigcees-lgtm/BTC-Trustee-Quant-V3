@@ -258,13 +258,16 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 150 },
+          generationConfig: {
+            maxOutputTokens: 150,
+            temperature: 0.1,
+          },
         }),
         signal: controller.signal,
       }
@@ -496,7 +499,7 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
         "X-Title": "BTC Trustee Quant V3",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct",
+        model: "meta-llama/llama-3.3-70b-instruct:free",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
