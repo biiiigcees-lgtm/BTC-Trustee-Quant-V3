@@ -212,39 +212,38 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     return { ...unavailableProvider("gemini"), errorReason: "API key not configured" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 150,
-            temperature: 0.1,
-          },
-        }),
-        signal: controller.signal,
-      }
-    );
-    clearTimeout(timeout);
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`;
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[consensus] Gemini error ${response.status}: ${errText}`);
-      return errorProvider("gemini", `${response.status} ${response.statusText}`);
+    const geminiBody = {
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        maxOutputTokens: 150,
+        temperature: 0.1
+      }
+    };
+
+    const res = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody),
+      signal: AbortSignal.timeout(12000)
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[consensus] Gemini error ${res.status}: ${errText}`);
+      return errorProvider("gemini", `${res.status} ${res.statusText}`);
     }
 
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    // Parse response like this:
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     console.log(`[consensus] Gemini response: ${text}`);
     return parseProviderResponse(text, "gemini");
   } catch (err: unknown) {
-    clearTimeout(timeout);
     return errorProvider("gemini", logProviderThrow("Gemini", err));
   }
 }
