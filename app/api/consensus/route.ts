@@ -8,17 +8,17 @@ export const dynamic = "force-dynamic";
 
 // Provider weights for weighted voting (tuned for crypto short-term prediction)
 const PROVIDER_WEIGHTS: Record<string, number> = {
-  groq: 1.2,
-  openai: 1.3,
-  gemini: 1.0,
-  mistral: 0.9,
-  cerebras: 1.0,
-  siliconflow: 0.8,
+  groq: 1.3,
+  "groq-fast": 0.8,
+  gemini: 1.2,
+  mistral: 1.0,
   openrouter: 0.9,
+  huggingface: 0.7,
 };
 
 // Timeout per provider (ms)
 const PROVIDER_TIMEOUT_MS = 12000;
+const HUGGINGFACE_TIMEOUT_MS = 20000;
 
 // Rate limiting: 60 second cooldown
 let lastCallTimestamp = 0;
@@ -95,42 +95,51 @@ No preamble, no markdown, no explanation outside the JSON.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RETRY HELPER
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  maxRetries = 1
-): Promise<Response> {
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      // If 429, wait and retry
-      if (response.status === 429 && attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-        continue;
-      }
-      return response;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-      }
-    }
-  }
-  throw lastError || new Error("Max retries exceeded");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // PROVIDER QUERY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function queryGroq(prompt: string): Promise<ProviderResult> {
+function unavailableProvider(name: string): ProviderResult {
+  return { name, direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
+}
+
+function errorProvider(name: string, errorReason?: string): ProviderResult {
+  return { name, direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason };
+}
+
+function normalizeProviderResult(
+  name: string,
+  parsed: Record<string, unknown> | null
+): ProviderResult {
+  if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
+    return errorProvider(name);
+  }
+
+  const direction = String(parsed.direction).toUpperCase();
+  if (direction !== "ABOVE" && direction !== "BELOW") {
+    return errorProvider(name);
+  }
+
+  return {
+    name,
+    direction,
+    confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
+    reasoning: String(parsed.reasoning || "").slice(0, 100),
+    status: "ok",
+  };
+}
+
+function isGracefulUnavailableStatus(status: number): boolean {
+  return status === 401 || status === 402 || status === 429;
+}
+
+async function queryGroqModel(
+  prompt: string,
+  name: "groq" | "groq-fast",
+  model: string
+): Promise<ProviderResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
+    return unavailableProvider(name);
   }
 
   try {
@@ -144,7 +153,7 @@ async function queryGroq(prompt: string): Promise<ProviderResult> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
@@ -155,102 +164,30 @@ async function queryGroq(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider(name);
+      return errorProvider(name, `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "groq",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "groq", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+    return normalizeProviderResult(name, extractJsonFromText(content));
+  } catch {
+    return unavailableProvider(name);
   }
 }
 
-async function queryOpenAI(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
-  }
+async function queryGroq(prompt: string): Promise<ProviderResult> {
+  return queryGroqModel(prompt, "groq", "llama-3.3-70b-versatile");
+}
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-    const response = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: 150,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (response.status === 429) {
-      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: "429 Rate limited - retry later" };
-    }
-
-    if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "openai",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-  }
+async function queryGroqFast(prompt: string): Promise<ProviderResult> {
+  return queryGroqModel(prompt, "groq-fast", "llama-3.1-8b-instant");
 }
 
 async function queryGemini(prompt: string): Promise<ProviderResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
+    return unavailableProvider("gemini");
   }
 
   try {
@@ -276,40 +213,22 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("gemini");
+      return errorProvider("gemini", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "gemini",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "gemini", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+    return normalizeProviderResult("gemini", extractJsonFromText(content));
+  } catch {
+    return unavailableProvider("gemini");
   }
 }
 
 async function queryMistral(prompt: string): Promise<ProviderResult> {
   const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) {
-    return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
+    return unavailableProvider("mistral");
   }
 
   try {
@@ -323,7 +242,7 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "mistral-large-latest",
+        model: "mistral-small-latest",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
@@ -334,156 +253,22 @@ async function queryMistral(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("mistral");
+      return errorProvider("mistral", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "mistral",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "mistral", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-  }
-}
-
-async function queryCerebras(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.CEREBRAS_API_KEY;
-  if (!apiKey) {
-    return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: 150,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "cerebras",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "cerebras", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-  }
-}
-
-async function querySiliconFlow(prompt: string): Promise<ProviderResult> {
-  const apiKey = process.env.SILICONFLOW_API_KEY;
-  if (!apiKey) {
-    return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-
-    const response = await fetch("https://api.siliconflow.cn/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "Qwen/Qwen2.5-72B-Instruct",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: 150,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
-
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "siliconflow",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "siliconflow", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+    return normalizeProviderResult("mistral", extractJsonFromText(content));
+  } catch {
+    return unavailableProvider("mistral");
   }
 }
 
 async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "unavailable" };
+    return unavailableProvider("openrouter");
   }
 
   try {
@@ -510,33 +295,59 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      const errorText = `${response.status} ${response.statusText}`;
-      return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+      if (isGracefulUnavailableStatus(response.status)) return unavailableProvider("openrouter");
+      return errorProvider("openrouter", `${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
-    const parsed = extractJsonFromText(content);
+    return normalizeProviderResult("openrouter", extractJsonFromText(content));
+  } catch {
+    return unavailableProvider("openrouter");
+  }
+}
 
-    if (!parsed || !parsed.direction || typeof parsed.confidence !== "number") {
-      return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
+async function queryHuggingFace(prompt: string): Promise<ProviderResult> {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
+    return unavailableProvider("huggingface");
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), HUGGINGFACE_TIMEOUT_MS);
+
+    const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 150,
+          temperature: 0.1,
+          return_full_text: false,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      if (isGracefulUnavailableStatus(response.status) || response.status === 503) {
+        return unavailableProvider("huggingface");
+      }
+      return errorProvider("huggingface", `${response.status} ${response.statusText}`);
     }
 
-    const direction = String(parsed.direction).toUpperCase();
-    if (direction !== "ABOVE" && direction !== "BELOW") {
-      return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
-    }
-
-    return {
-      name: "openrouter",
-      direction,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence))),
-      reasoning: String(parsed.reasoning || "").slice(0, 100),
-      status: "ok",
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Network error";
-    return { name: "openrouter", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: errorText };
+    const data = await response.json();
+    const content = Array.isArray(data) ? data[0]?.generated_text || "" : "";
+    return normalizeProviderResult("huggingface", extractJsonFromText(content));
+  } catch {
+    return unavailableProvider("huggingface");
   }
 }
 
@@ -658,12 +469,11 @@ export async function POST(req: NextRequest) {
     // Fire all providers in parallel
     const providerPromises = [
       queryGroq(prompt),
-      queryOpenAI(prompt),
+      queryGroqFast(prompt),
       queryGemini(prompt),
       queryMistral(prompt),
-      queryCerebras(prompt),
-      querySiliconFlow(prompt),
       queryOpenRouter(prompt),
+      queryHuggingFace(prompt),
     ];
 
     const providerResults = await Promise.allSettled(providerPromises);
