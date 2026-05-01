@@ -564,6 +564,26 @@ function computeConsensus(providers: ProviderResult[]): ConsensusResponse {
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Helper function to fetch BTC price if not provided
+async function getBTCPrice(): Promise<number> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const btcRes = await fetch(`${baseUrl}/api/btc`);
+    if (btcRes.ok) {
+      const btcData = await btcRes.json();
+      return btcData.price;
+    }
+  } catch (error) {
+    console.error('Failed to fetch BTC price:', error);
+  }
+  // Fallback to a reasonable default
+  return 77000;
+}
+
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+
 export async function POST(req: NextRequest) {
   const now = Date.now();
 
@@ -573,11 +593,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    const { price, ema9, ema21, rsi, target, expiryLabel, secondsToExpiry } = body;
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      // GET request or no body - use empty object
+      body = {};
+    }
 
-    if (!price || !target) {
-      return NextResponse.json({ error: "Missing required fields: price, target" }, { status: 400 });
+    let { price, ema9, ema21, rsi, target, expiryLabel, secondsToExpiry } = body;
+
+    // If no price provided, fetch it from /api/btc
+    if (!price) {
+      price = await getBTCPrice();
+    }
+
+    // Default target if not provided
+    if (!target) {
+      target = "BTC/USD";
+    }
+
+    if (!price) {
+      return NextResponse.json({ error: "Could not determine BTC price" }, { status: 400 });
     }
 
     const prompt = buildPrompt({ price, ema9, ema21, rsi, target, expiryLabel, secondsToExpiry });
