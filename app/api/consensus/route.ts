@@ -95,6 +95,35 @@ No preamble, no markdown, no explanation outside the JSON.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RETRY HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 1
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      // If 429, wait and retry
+      if (response.status === 429 && attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError || new Error("Max retries exceeded");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PROVIDER QUERY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -166,14 +195,14 @@ async function queryOpenAI(prompt: string): Promise<ProviderResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
@@ -182,6 +211,10 @@ async function queryOpenAI(prompt: string): Promise<ProviderResult> {
     });
 
     clearTimeout(timeout);
+
+    if (response.status === 429) {
+      return { name: "openai", direction: "unavailable", confidence: 0, reasoning: "", status: "error", errorReason: "429 Rate limited - retry later" };
+    }
 
     if (!response.ok) {
       const errorText = `${response.status} ${response.statusText}`;
@@ -225,7 +258,7 @@ async function queryGemini(prompt: string): Promise<ProviderResult> {
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -345,7 +378,7 @@ async function queryCerebras(prompt: string): Promise<ProviderResult> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama3.1-70b",
+        model: "llama-3.3-70b",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
@@ -463,7 +496,7 @@ async function queryOpenRouter(prompt: string): Promise<ProviderResult> {
         "X-Title": "BTC Trustee Quant V3",
       },
       body: JSON.stringify({
-        model: "anthropic/claude-3.5-sonnet",
+        model: "meta-llama/llama-3.3-70b-instruct",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 150,
@@ -639,6 +672,9 @@ export async function POST(req: NextRequest) {
       }
       return { name: "unknown", direction: "unavailable", confidence: 0, reasoning: "", status: "error" };
     });
+
+    // Debug logging for provider status
+    console.log('[consensus]', providers.map(p => `${p.name}:${p.status}`).join(' '));
 
     const consensus = computeConsensus(providers);
 
